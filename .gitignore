@@ -1,0 +1,6 @@
+# Transient logs from setup runs
+*.log
+
+# Dotfile backups created by setup.sh
+*.bak-*
+*.custom-bak

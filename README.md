@@ -1,0 +1,136 @@
+# mac-setup
+
+Reproducible macOS developer setup for Apple Silicon — Homebrew packages, dotfiles, language runtimes, and Nix.
+
+## Setup / Usage
+
+```bash
+bash ~/mac-setup/setup.sh            # install / sync (idempotent, safe to re-run)
+bash ~/mac-setup/setup.sh --update   # also upgrade brew packages, mise runtimes, and Nix
+bash ~/mac-setup/setup.sh --help     # usage
+```
+
+The script is re-runnable. Without `--update` it installs anything missing and
+leaves already-installed packages at their current versions. With `--update` it
+additionally runs `brew upgrade`, `mise upgrade`, and the Determinate Nix upgrade.
+
+What it does:
+
+1. **Homebrew** — `brew update` + `brew bundle` from the [`Brewfile`](Brewfile).
+2. **Dotfiles** — symlinks `dotfiles/*` into `~` (existing real files are backed up to `*.bak-<timestamp>`).
+3. **Runtimes** — installs node/python/go/rust via [mise](https://mise.jdx.dev), plus rustup components and Go's `air`.
+4. **Nix** — Determinate Systems installer (not via Homebrew).
+
+After a first run: restart your terminal (`exec zsh`), set Ghostty as default, and `gh auth login`.
+
+---
+
+## Shell Shortcuts
+
+A curated set of zsh aliases and functions worth adding to `dotfiles/zshrc`.
+
+These are chosen to **complement** what's already configured, not repeat it. The current setup already gives you:
+
+- **zoxide** — `cd` is aliased to `z` (smart jump); `zi` opens an interactive, searchable cd-history picker
+- **fzf** — `Ctrl+R` fuzzy history search, `Ctrl+T` fuzzy file picker
+- **eza** — `ls`, `ll`, `lt` (tree); **bat** for `cat`; **nvim** for `vim`; **lazygit** for `lg`; **rg** for `grep`
+- **Nav** — `..`, `...`, `....`, `AUTO_CD`, `reload`
+- **git** — full alias set from the antidote/OMZ git plugin
+- **History** — shared across sessions, prefix search on `Up`/`Down`
+
+---
+
+## Quick exits & basics
+
+```zsh
+alias x='exit'
+alias c='clear'
+```
+
+## Directory navigation
+
+```zsh
+# bd <name>: jump UP to an ancestor directory whose name matches <name>
+bd() { cd "$(pwd | sed "s|\(.*/$1[^/]*/\).*|\1|")"; }
+
+# mkcd <dir>: make a directory and cd into it
+mkcd() { mkdir -p "$1" && cd "$1"; }
+
+# toggle back to the previous directory
+alias -- -='cd -'
+```
+
+> Note: for cd **history**, zoxide's `zi` already gives you an interactive fuzzy picker — no custom function needed.
+
+## History
+
+```zsh
+alias h='history'
+alias hg='history | rg'   # search shell history: hg <pattern>
+```
+
+## Extract any archive
+
+```zsh
+extract() {
+  case "$1" in
+    *.tar.gz|*.tgz) tar xzf "$1"   ;;
+    *.tar.bz2)      tar xjf "$1"   ;;
+    *.tar)          tar xf "$1"    ;;
+    *.gz)           gunzip "$1"    ;;
+    *.zip)          unzip "$1"     ;;
+    *)              echo "extract: unknown format '$1'" ;;
+  esac
+}
+```
+
+## Ports & processes
+
+```zsh
+# list everything listening on a TCP port
+alias ports='lsof -iTCP -sTCP:LISTEN -nP'
+
+# killport <port>: kill whatever is bound to a port (e.g. killport 3000)
+killport() { lsof -ti tcp:"$1" | xargs kill -9; }
+```
+
+## Global aliases (pipe helpers)
+
+Global aliases expand anywhere on the line, so you can tack them onto any pipe:
+
+```zsh
+alias -g G='| rg'      # ... G pattern    -> pipe into ripgrep
+alias -g L='| less'    # ... L            -> pipe into less
+alias -g H='| head'    # ... H            -> pipe into head
+```
+
+Example: `ll G config`, `cat file L`, `dmesg H`.
+
+## fzf helpers
+
+```zsh
+# fcd: fuzzy-pick a subdirectory and cd into it
+fcd() { cd "$(find . -type d -not -path '*/.*' | fzf)"; }
+```
+
+---
+
+## Language tooling (2026 stack)
+
+Wired into `Brewfile` / `setup.sh` so a fresh machine is reproducible.
+
+| Lang | Tools | Notes |
+|---|---|---|
+| **Python** | `uv`, `ruff` | Astral stack. `uv` = pkg/project manager; `ruff` = linter+formatter. Type checker `ty` per-project via `uvx ty check`. Runtime from mise (`python@latest` = 3.14; use `mise use python@3.12` per-project when needed). |
+| **Rust** | `rust-analyzer`, `clippy`, `rustfmt`, `bacon`, `cargo-nextest` | Toolchain via rustup (components ensured in `setup.sh`); `bacon` = watch/test loop; `cargo-nextest` = fast test runner. |
+| **Go** | `gopls`, `golangci-lint`, `delve`, `air` | LSP + meta-linter + debugger (`dlv`); `air` (live reload) via `go install` → `~/go/bin`. |
+| **JS/Next** | `biome`, `pnpm`, `bun` | Next 16 = Turbopack + TS by default; `biome` replaces ESLint+Prettier on new projects. |
+
+Editors: `gram` (Zed fork), `cursor` (AI-first VS Code fork), `neovim`.
+
+## Sources
+
+- [Towards The Cloud — zsh aliases](https://towardsthecloud.com)
+- [SitePoint — 75 Zsh commands, plugins & aliases](https://www.sitepoint.com/zsh-tips-tricks/)
+- [Stupid ZSH tricks — thenybble.de](https://thenybble.de)
+- [DEV — Useful aliases for ZSH](https://dev.to)

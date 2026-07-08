@@ -1,0 +1,58 @@
+# ~/.zshrc — managed by ~/mac-setup
+
+# ---------- Homebrew ----------
+eval "$(/opt/homebrew/bin/brew shellenv)"
+
+# ---------- PATH ----------
+export PATH="$HOME/.local/bin:$HOME/go/bin:$PATH"   # user-installed + `go install` binaries
+
+# ---------- History ----------
+HISTFILE=~/.zsh_history
+HISTSIZE=50000
+SAVEHIST=50000
+setopt SHARE_HISTORY HIST_IGNORE_ALL_DUPS HIST_IGNORE_SPACE INC_APPEND_HISTORY
+setopt AUTO_CD INTERACTIVE_COMMENTS
+
+# ---------- Completions ----------
+autoload -Uz compinit && compinit
+zstyle ':completion:*' menu select
+zstyle ':completion:*' matcher-list 'm:{a-zA-Z}={A-Za-z}'  # case-insensitive
+
+# ---------- Key bindings ----------
+# Up/Down search history for entries that START with what you've typed.
+autoload -Uz up-line-or-beginning-search down-line-or-beginning-search
+zle -N up-line-or-beginning-search
+zle -N down-line-or-beginning-search
+bindkey "^[[A" up-line-or-beginning-search    # Up
+bindkey "^[OA" up-line-or-beginning-search    # Up (application mode)
+bindkey "^[[B" down-line-or-beginning-search  # Down
+bindkey "^[OB" down-line-or-beginning-search  # Down (application mode)
+
+# ---------- Tools ----------
+eval "$(starship init zsh)"        # prompt
+eval "$(zoxide init zsh)"          # smart cd -> use `z <dir>`
+eval "$(mise activate zsh)"        # runtime version manager
+eval "$(direnv hook zsh)"          # per-project env
+source <(fzf --zsh)                # fuzzy finder (Ctrl+R history, Ctrl+T files)
+
+# ---------- Aliases (git aliases come from the OMZ git plugin, loaded below) ----------
+alias ls='eza --group-directories-first --icons'
+alias ll='eza -lah --group-directories-first --icons --git'
+alias lt='eza --tree --level=2 --icons'
+alias cat='bat'
+alias cd='z'
+alias vim='nvim'
+alias lg='lazygit'
+alias grep='rg'
+alias ..='cd ..'
+alias ...='cd ../..'
+alias ....='cd ../../..'
+alias reload='exec zsh'
+
+# ---------- Extra shortcuts (curated aliases & functions) ----------
+[ -f "$HOME/.config/zsh/shortcuts.zsh" ] && source "$HOME/.config/zsh/shortcuts.zsh"
+
+# ---------- Plugins (antidote) — LAST so syntax-highlighting wraps everything ----------
+# Plugin list: ~/.zsh_plugins.txt  ·  gives git aliases, autosuggestions, highlighting.
+source $(brew --prefix)/opt/antidote/share/antidote/antidote.zsh
+antidote load

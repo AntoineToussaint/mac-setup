@@ -1,0 +1,18 @@
+# ~/.config/ghostty/config — managed by ~/mac-setup
+
+font-family = "FiraCode Nerd Font Mono"
+font-size = 14
+# FiraCode ligatures (!= <= => === ->) render automatically; Ghostty has calt on by default.
+
+theme = "TokyoNight Storm"
+background-opacity = 0.96
+background-blur-radius = 20
+
+window-padding-x = 10
+window-padding-y = 10
+macos-titlebar-style = "tabs"
+cursor-style = "bar"
+mouse-hide-while-typing = true
+
+# Quick terminal (drop-down) on a global hotkey
+keybind = global:cmd+grave_accent=toggle_quick_terminal
