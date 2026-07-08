@@ -108,7 +108,7 @@ else
   2. Open Ghostty and set it as your default terminal.
   3. Authenticate GitHub CLI:   gh auth login
   4. Edit ~/mac-setup/dotfiles/gitconfig if name/email need changes.
-  5. Sign in to Setapp; consider skipping brew 'rectangle' if you use a
-     Setapp window manager (Swish / Rectangle Pro / Mosaic).
+  5. Sign in to Setapp and install a window manager (Swish / Rectangle Pro /
+     Mosaic) — TablePlus, DevUtils, Paste, and CleanShot X are also worth it.
 EOF
 fi

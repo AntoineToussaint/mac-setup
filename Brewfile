@@ -59,7 +59,7 @@ brew "biome"          # Rust linter + formatter (ESLint + Prettier replacement)
 cask "gram"          # Zed fork without AI/telemetry
 cask "cursor"        # AI-first code editor (VS Code fork)
 cask "raycast"       # launcher / Spotlight replacement (free)
-cask "rectangle"     # window management (see Setapp note — you may skip this)
+# Window management via Setapp (Swish / Rectangle Pro / Mosaic) instead of the free Rectangle cask
 cask "setapp"        # your Setapp subscription manager
 cask "google-chrome" # browser
 cask "1password"     # password manager (already installed)
