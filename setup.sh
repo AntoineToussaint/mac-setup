@@ -67,6 +67,10 @@ link "$DOTS/gitconfig"      "$HOME/.gitconfig"
 # 3) Languages via mise ------------------------------------------------------
 log "Installing language runtimes via mise (node, python, go, rust)"
 eval "$(mise activate bash)"
+# Use precompiled Python (astral python-build-standalone) instead of compiling
+# from source — faster, and avoids the pyenv git-clone step that fails on a
+# transient network blip.
+mise settings set python.compile false
 mise use --global node@lts
 mise use --global python@latest
 mise use --global go@latest
