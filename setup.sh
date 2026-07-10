@@ -10,6 +10,8 @@
 # (security.sh — secure by default; opt out with --no-security).
 set -euo pipefail
 
+export HOMEBREW_NO_ENV_HINTS=1   # quiet Homebrew's hint chatter (errors still show)
+
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DOTS="$DIR/dotfiles"
 STAMP="$(date +%Y%m%d-%H%M%S)"
