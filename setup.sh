@@ -35,6 +35,19 @@ link() { # link SRC -> DEST, backing up any existing real file
   ln -sfn "$src" "$dest"
   echo "linked $dest -> $src"
 }
+retry() { # retry <n> <cmd...> — re-run a flaky (usually network) command with backoff
+  local n="$1"; shift
+  local i=1
+  until "$@"; do
+    if [ "$i" -ge "$n" ]; then
+      log "still failing after $n attempts: $* — giving up"
+      return 1
+    fi
+    log "attempt $i/$n failed: $* — retrying in $((i*5))s"
+    sleep $((i*5))
+    i=$((i+1))
+  done
+}
 
 # Sudo up front, ONCE ---------------------------------------------------------
 # The Nix upgrade and (unless --no-security) security.sh need root. Prompt a
@@ -71,13 +84,19 @@ eval "$(mise activate bash)"
 # from source — faster, and avoids the pyenv git-clone step that fails on a
 # transient network blip.
 mise settings set python.compile false
-mise use --global node@lts
-mise use --global python@latest
-mise use --global go@latest
-mise use --global rust@latest
-mise install
+# Wrapped in retry(): downloads from mise-versions.jdx.dev / GitHub occasionally
+# refuse a connection on a network hiccup. The block is idempotent — a retry
+# skips already-installed runtimes and only re-attempts what failed.
+install_runtimes() {
+  mise use --global node@lts
+  mise use --global python@latest
+  mise use --global go@latest
+  mise use --global rust@latest
+  mise install
+}
+retry 4 install_runtimes
 log "Upgrading mise-managed runtimes"
-mise upgrade
+retry 3 mise upgrade
 
 # 3b) Extra language tooling not covered by Homebrew -------------------------
 # Rust: ensure rustup components (rust-analyzer/clippy/rustfmt) are present.
