@@ -5,6 +5,9 @@ font-size = 14
 # FiraCode ligatures (!= <= => === ->) render automatically; Ghostty has calt on by default.
 
 theme = "TokyoNight Storm"
+# De-purple: replace the magenta ANSI slots with a near-black slate
+palette = 5=#414868
+palette = 13=#565f89
 background-opacity = 0.96
 background-blur-radius = 20
 
