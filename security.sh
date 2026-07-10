@@ -6,6 +6,11 @@ set -euo pipefail
 
 log() { printf "\n\033[1;34m==> %s\033[0m\n" "$*"; }
 
+# Cache sudo once up front. All the privileged steps below are quick and
+# consecutive, so one prompt covers them. (When run via setup.sh the credential
+# is already warm, so this is a no-op there.) Never run this script with `sudo`.
+sudo -v
+
 # ---------- Baseline status (report only — fix in System Settings if off) ----
 log "Baseline status"
 fdesetup status        # FileVault: full-disk encryption — must be On

@@ -36,12 +36,22 @@ link() { # link SRC -> DEST, backing up any existing real file
   echo "linked $dest -> $src"
 }
 
+# Sudo up front, ONCE ---------------------------------------------------------
+# The Nix upgrade and (unless --no-security) security.sh need root. Prompt a
+# single time here and keep the credential warm for the whole run so the long
+# brew step in between doesn't let it expire. Run this script as your normal
+# user — never `sudo bash setup.sh` (that would run brew/mise/dotfiles as root).
+log "Caching sudo (you'll be asked once)"
+sudo -v
+while true; do sudo -n true; sleep 60; kill -0 "$$" 2>/dev/null || exit; done &
+trap 'kill %1 2>/dev/null' EXIT
+
 # 1) Homebrew packages -------------------------------------------------------
 log "Refreshing Homebrew and installing packages (Brewfile)"
 brew update
 brew bundle --file="$DIR/Brewfile"
 log "Upgrading Homebrew packages"
-brew upgrade
+brew upgrade --yes
 brew cleanup
 # To remove anything not in the Brewfile:  brew bundle cleanup --file="$DIR/Brewfile"
 
