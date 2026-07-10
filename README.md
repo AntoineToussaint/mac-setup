@@ -9,6 +9,7 @@ bash ~/mac-setup/setup.sh                 # setup + update + security hardening 
 bash ~/mac-setup/setup.sh --no-security   # skip the security hardening step
 bash ~/mac-setup/setup.sh --help          # usage
 bash ~/mac-setup/security.sh              # security hardening alone (also run by setup.sh)
+bash ~/mac-setup/doctor.sh                # validate the setup (read-only, no sudo)
 ```
 
 One command does it all, and it's re-runnable: installs anything missing,
@@ -25,6 +26,10 @@ What it does:
 5. **Security** — runs [`security.sh`](security.sh): firewall + stealth, auto-updates, npm `ignore-scripts`, Touch ID for sudo (skip with `--no-security`).
 
 After a first run: restart your terminal (`exec zsh`), set Ghostty as default, and `gh auth login`.
+
+To verify everything took, run [`doctor.sh`](doctor.sh) — it checks the hardening,
+dotfile symlinks, Brewfile, runtimes, and credentials, and lists any manual
+follow-ups still unchecked in [`TODO.md`](TODO.md).
 
 ---
 
