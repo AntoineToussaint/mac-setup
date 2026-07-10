@@ -72,6 +72,14 @@ cask "discord"       # chat/communities
 # Get from Setapp (already in your subscription — do NOT brew):
 #   CleanShot X · Bartender · CleanMyMac · Gifox · Sip
 
+# ---------- Security ----------
+cask "little-snitch"  # outbound firewall: per-app/per-domain rules + alert mode (paid — the good one)
+# cask "lulu"         # free outbound firewall (Objective-See) — alternative; do NOT run both
+cask "blockblock"     # alerts when anything installs persistence (launch agents/daemons)
+cask "knockknock"     # audits what is already persistently installed — run after setup
+cask "oversight"      # mic/camera access alerts
+# NextDNS (DNS threat-feed filtering) is account-based — see README → Security.
+
 # ---------- API & gRPC ----------
 cask "bruno"        # REST + gRPC client, local & git-friendly (.bru files)
 brew "grpcurl"      # curl for gRPC

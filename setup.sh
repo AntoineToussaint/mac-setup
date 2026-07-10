@@ -2,25 +2,25 @@
 # ~/mac-setup/setup.sh — macOS developer setup (Apple Silicon)
 # Review before running. Re-runnable (idempotent).
 #
-#   Install / sync:  bash ~/mac-setup/setup.sh
-#   Update all:      bash ~/mac-setup/setup.sh --update
+#   Setup + update everything:  bash ~/mac-setup/setup.sh
+#   Skip security hardening:    bash ~/mac-setup/setup.sh --no-security
 #
-# Without --update the script installs anything missing but leaves already
-# installed packages at their current versions. With --update it also upgrades
-# Homebrew packages, mise runtimes, and Nix to the latest versions.
+# One command does it all: installs anything missing, upgrades Homebrew
+# packages, mise runtimes, and Nix, and applies security hardening
+# (security.sh — secure by default; opt out with --no-security).
 set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DOTS="$DIR/dotfiles"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 
-UPDATE=0
+SECURITY=1
 for arg in "$@"; do
   case "$arg" in
-    --update|-u|update) UPDATE=1 ;;
+    --no-security) SECURITY=0 ;;
     -h|--help)
-      grep '^#' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
-    *) echo "Unknown option: $arg (use --update or --help)" >&2; exit 1 ;;
+      awk 'NR>1 { if (/^#/) { sub(/^# ?/,""); print } else exit }' "${BASH_SOURCE[0]}"; exit 0 ;;
+    *) echo "Unknown option: $arg (use --no-security or --help)" >&2; exit 1 ;;
   esac
 done
 
@@ -40,12 +40,10 @@ link() { # link SRC -> DEST, backing up any existing real file
 log "Refreshing Homebrew and installing packages (Brewfile)"
 brew update
 brew bundle --file="$DIR/Brewfile"
-if [ "$UPDATE" -eq 1 ]; then
-  log "Upgrading Homebrew packages"
-  brew upgrade
-  brew cleanup
-  # To remove anything not in the Brewfile:  brew bundle cleanup --file="$DIR/Brewfile"
-fi
+log "Upgrading Homebrew packages"
+brew upgrade
+brew cleanup
+# To remove anything not in the Brewfile:  brew bundle cleanup --file="$DIR/Brewfile"
 
 # 2) Dotfiles (symlinked so future edits in ~/mac-setup take effect) ---------
 log "Linking dotfiles"
@@ -64,10 +62,8 @@ mise use --global python@latest
 mise use --global go@latest
 mise use --global rust@latest
 mise install
-if [ "$UPDATE" -eq 1 ]; then
-  log "Upgrading mise-managed runtimes"
-  mise upgrade
-fi
+log "Upgrading mise-managed runtimes"
+mise upgrade
 
 # 3b) Extra language tooling not covered by Homebrew -------------------------
 # Rust: ensure rustup components (rust-analyzer/clippy/rustfmt) are present.
@@ -84,26 +80,27 @@ fi
 
 # 4) Nix (Determinate installer — NOT via Homebrew) --------------------------
 if command -v nix >/dev/null 2>&1; then
-  if [ "$UPDATE" -eq 1 ]; then
-    log "Upgrading Nix (Determinate)"
-    if command -v determinate-nixd >/dev/null 2>&1; then
-      sudo determinate-nixd upgrade
-    else
-      sudo -i nix upgrade-nix
-    fi
+  log "Upgrading Nix (Determinate)"
+  if command -v determinate-nixd >/dev/null 2>&1; then
+    sudo determinate-nixd upgrade
   else
-    log "Nix already installed, skipping (use --update to upgrade)"
+    sudo -i nix upgrade-nix
   fi
 else
   log "Installing Nix (Determinate Systems installer — will prompt for sudo)"
   curl -fsSL https://install.determinate.systems/nix | sh -s -- install --no-confirm
 fi
 
-if [ "$UPDATE" -eq 1 ]; then
-  log "Update complete."
+# 5) Security hardening (secure by default — skip with --no-security) --------
+if [ "$SECURITY" -eq 1 ]; then
+  log "Applying security hardening (security.sh — will prompt for sudo)"
+  bash "$DIR/security.sh"
 else
-  log "Done. Next steps:"
-  cat <<'EOF'
+  log "Skipping security hardening (--no-security)"
+fi
+
+log "Done. Next steps:"
+cat <<'EOF'
   1. Restart your terminal (or: exec zsh) to load the new shell config.
   2. Open Ghostty and set it as your default terminal.
   3. Authenticate GitHub CLI:   gh auth login
@@ -111,4 +108,3 @@ else
   5. Sign in to Setapp and install a window manager (Swish / Rectangle Pro /
      Mosaic) — TablePlus, DevUtils, Paste, and CleanShot X are also worth it.
 EOF
-fi

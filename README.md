@@ -5,23 +5,57 @@ Reproducible macOS developer setup for Apple Silicon — Homebrew packages, dotf
 ## Setup / Usage
 
 ```bash
-bash ~/mac-setup/setup.sh            # install / sync (idempotent, safe to re-run)
-bash ~/mac-setup/setup.sh --update   # also upgrade brew packages, mise runtimes, and Nix
-bash ~/mac-setup/setup.sh --help     # usage
+bash ~/mac-setup/setup.sh                 # setup + update + security hardening (idempotent)
+bash ~/mac-setup/setup.sh --no-security   # skip the security hardening step
+bash ~/mac-setup/setup.sh --help          # usage
+bash ~/mac-setup/security.sh              # security hardening alone (also run by setup.sh)
 ```
 
-The script is re-runnable. Without `--update` it installs anything missing and
-leaves already-installed packages at their current versions. With `--update` it
-additionally runs `brew upgrade`, `mise upgrade`, and the Determinate Nix upgrade.
+One command does it all, and it's re-runnable: installs anything missing,
+upgrades what's already there (`brew upgrade`, `mise upgrade`, Determinate Nix
+upgrade), and applies security hardening — **secure by default**; the only flag
+is to opt out.
 
 What it does:
 
-1. **Homebrew** — `brew update` + `brew bundle` from the [`Brewfile`](Brewfile).
+1. **Homebrew** — `brew update` + `brew bundle` from the [`Brewfile`](Brewfile), then `brew upgrade`.
 2. **Dotfiles** — symlinks `dotfiles/*` into `~` (existing real files are backed up to `*.bak-<timestamp>`).
-3. **Runtimes** — installs node/python/go/rust via [mise](https://mise.jdx.dev), plus rustup components and Go's `air`.
-4. **Nix** — Determinate Systems installer (not via Homebrew).
+3. **Runtimes** — installs and upgrades node/python/go/rust via [mise](https://mise.jdx.dev), plus rustup components and Go's `air`.
+4. **Nix** — Determinate Systems installer / upgrade (not via Homebrew).
+5. **Security** — runs [`security.sh`](security.sh): firewall + stealth, auto-updates, npm `ignore-scripts`, Touch ID for sudo (skip with `--no-security`).
 
 After a first run: restart your terminal (`exec zsh`), set Ghostty as default, and `gh auth login`.
+
+---
+
+## Security
+
+Threat model: for a developer, realistic attacks are things that **run code as you** —
+malicious browser extensions, npm/pip packages with install scripts, cloned repos you
+build. Disk encryption doesn't help there; limiting what's readable and usable does.
+
+Layers (mostly automated by [`security.sh`](security.sh) + the Brewfile's Security section):
+
+| Layer | What | How |
+|---|---|---|
+| Credentials | SSH keys + commit signing never on disk | 1Password SSH agent + `op-ssh-sign` (in `dotfiles/gitconfig`); per-use biometric approval |
+| Credentials | Phishing-proof 2FA | Hardware key (YubiKey) on GitHub / Google / cloud — manual |
+| Supply chain | npm install scripts disabled globally | `security.sh` (`ignore-scripts=true`; pnpm ≥10 and bun already block by default) |
+| Supply chain | Untrusted code off the bare machine | Run interview projects / unknown repos in OrbStack containers |
+| Egress | See + block outbound traffic per app/domain | Little Snitch (Brewfile) — Alert Mode for a few days, then rules |
+| Egress | Block known-bad domains system-wide | [NextDNS](https://nextdns.io) with threat-intel feeds — manual, account-based |
+| Detection | Persistence + mic/camera alerts | BlockBlock, KnockKnock, OverSight (Brewfile) |
+| OS | Firewall + stealth, auto-updates, Touch ID sudo | `security.sh` |
+| OS | FileVault / SIP / Gatekeeper must be on | `security.sh` reports status; fix in System Settings |
+
+Rules of thumb:
+
+- **Browser extensions are code with access to everything you browse.** Keep the count
+  minimal, audit occasionally (`chrome://extensions`), prefer open-source ones.
+  (This repo exists partly because ModHeader v7.0.18 shipped spyware in July 2026.)
+- **No long-lived plaintext tokens on disk** — prefer Keychain/1Password (`op run`,
+  direnv pulling from `op`) over `.env` files with real secrets.
+- **Assume breach**: Time Machine + offsite backup; rotate anything that may have leaked.
 
 ---
 
