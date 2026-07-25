@@ -31,7 +31,7 @@ Things `setup.sh` / `security.sh` can't automate. Check off as you go;
       not actively debugging (it restores the proxy off on clean exit).
 - [ ] **Keep the tunnels running across reboots** — both public endpoints are
       live but depend on a foreground process plus `warden` on :18982:
-        * <https://dev.codefly.build> — Cloudflare named tunnel (no auth)
+        * <https://gateway.codefly.build> — Cloudflare named tunnel (no auth)
         * <https://antoines-macbook-pro.tail07934c.ts.net> — Funnel (no auth)
       Tailscale restores its own Funnel config at boot; cloudflared does not.
       For durability run `sudo cloudflared service install` (installs a launch
@@ -39,7 +39,11 @@ Things `setup.sh` / `security.sh` can't automate. Check off as you go;
       URLs resolve and terminate TLS but return 502.
       Both are unauthenticated by choice. `devtunnel funnel <port> --guard`
       re-adds the shared-secret gate on the Tailscale side; Cloudflare Access
-      (Zero Trust → Access → Applications) does the same for dev.codefly.build.
+      (Zero Trust → Access → Applications) does the same for gateway.codefly.build.
+- [ ] **Delete the stale `dev` CNAME** — Cloudflare dashboard → codefly.build →
+      DNS → Records. The old dev.codefly.build tunnel is gone, but cloudflared
+      cannot remove DNS records, so the name still resolves and returns 530
+      (error 1033, tunnel not found) instead of NXDOMAIN.
       Security note: a running tunnel publishes that local port to the whole
       internet. Put Cloudflare Access in front of it (Zero Trust → Access →
       Applications) for anything that isn't meant to be public.
