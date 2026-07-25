@@ -138,8 +138,15 @@ service_url() { # service_url <target>
 }
 
 tunnel_id() { # tunnel_id <name> — empty output when the tunnel does not exist
+  # Two shapes to survive: an account with no tunnels yields `null` rather than
+  # `[]`, and a live tunnel carries the zero timestamp "0001-01-01T00:00:00Z"
+  # in deleted_at rather than null. Testing `== null` matches neither.
   cloudflared tunnel list --output json 2>/dev/null \
-    | jq -r --arg n "$1" '.[] | select(.name == $n and .deleted_at == null) | .id' \
+    | jq -r --arg n "$1" '
+        (. // [])[]
+        | select(.name == $n)
+        | select((.deleted_at // "0001-01-01") | startswith("0001-01-01"))
+        | .id' \
     | head -1
 }
 

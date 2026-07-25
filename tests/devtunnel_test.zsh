@@ -39,15 +39,26 @@ if [[ "$1" == tunnel && "$2" == create ]]; then
   print -r -- "$3" >> "$STUB_CREATED"
 fi
 if [[ "$1" == tunnel && "$2" == list && "$3" == --output ]]; then
+  # An account with zero tunnels emits a bare `null`, which naive jq cannot
+  # iterate. STUB_EMPTY reproduces that first-tunnel-ever case.
+  if [[ -n "${STUB_EMPTY:-}" && ! -s "$STUB_CREATED" ]]; then
+    print -r -- 'null'
+    exit 0
+  fi
   {
-    print -rn -- '[{"id":"11111111-2222-3333-4444-555555555555","name":"dev-existing-example-com","deleted_at":null}'
+    # Real cloudflared marks a LIVE tunnel with the zero timestamp, not null —
+    # the stub said null, which hid a filter bug that broke every real tunnel.
+    print -rn -- '[{"id":"11111111-2222-3333-4444-555555555555","name":"dev-existing-example-com","deleted_at":"0001-01-01T00:00:00Z"}'
     integer n=0
     if [[ -f "$STUB_CREATED" ]]; then
       while IFS= read -r created; do
         n=$(( n + 1 ))
-        print -rn -- ",{\"id\":\"00000000-0000-0000-0000-00000000000$n\",\"name\":\"$created\",\"deleted_at\":null}"
+        print -rn -- ",{\"id\":\"00000000-0000-0000-0000-00000000000$n\",\"name\":\"$created\",\"deleted_at\":\"0001-01-01T00:00:00Z\"}"
       done < "$STUB_CREATED"
     fi
+    # A genuinely deleted tunnel carries a real timestamp and must be ignored,
+    # so a stale name never gets reused.
+    print -rn -- ',{"id":"deadbeef-0000-0000-0000-000000000000","name":"dev-deleted-example-com","deleted_at":"2026-01-02T03:04:05Z"}'
     print -r -- ']'
   }
 fi
@@ -120,6 +131,22 @@ config="$(<"$HOME/.cloudflared/dev-existing-example-com.yml")"
 [[ "$config" == *'noTLSVerify: true'* ]] || fail 'https origin needs noTLSVerify for dev certs'
 [[ "$config" == *'tunnel: 11111111-2222-3333-4444-555555555555'* ]] \
   || fail 'config did not reuse the existing tunnel id'
+
+# --- a deleted tunnel must not be reused ---------------------------------------
+# Its name still appears in `tunnel list`, distinguished only by a real
+# deleted_at timestamp. Reusing that id would point the config at a dead tunnel.
+: > "$STUB_LOG"
+"$TUNNEL" up deleted.example.com 3000 >/dev/null 2>&1
+[[ "$(<"$STUB_LOG")" == *'tunnel create dev-deleted-example-com'* ]] \
+  || fail 'reused a deleted tunnel instead of creating a fresh one'
+[[ "$(<"$HOME/.cloudflared/dev-deleted-example-com.yml")" != *'deadbeef'* ]] \
+  || fail 'config points at the deleted tunnel id'
+
+# --- an account with no tunnels returns null, not [] ---------------------------
+: > "$STUB_CREATED"
+STUB_EMPTY=1 "$TUNNEL" up first.example.com 3000 >/dev/null 2>&1
+[[ -f "$HOME/.cloudflared/dev-first-example-com.yml" ]] \
+  || fail 'could not create the first tunnel when the account listed null'
 
 # --- run: refuses a hostname that was never set up ----------------------------
 if "$TUNNEL" run never-configured.example.com >/dev/null 2>&1; then

@@ -29,18 +29,17 @@ Things `setup.sh` / `security.sh` can't automate. Check off as you go;
       If you want to keep using Proxyman: enable SSL proxying for github.com and
       trust its cert so the tunnel stops failing; otherwise quit Proxyman when
       not actively debugging (it restores the proxy off on clean exit).
-- [ ] **Cloudflare tunnel** (`devtunnel`, see README → Public dev tunnel) —
-      `cloudflared` is installed; the domain is registered elsewhere, so its
-      nameservers have to move to Cloudflare before a fixed hostname can exist.
-      1. Add the domain at <https://dash.cloudflare.com> (free plan) — it scans
-         the existing records and shows you two nameservers.
-      2. At the registrar, replace the nameservers with that pair. Registration
-         and billing stay where they are; only DNS hosting moves.
-      3. `devtunnel check dev.<yourdomain>` until it reports Cloudflare
-         (minutes to a few hours), then `devtunnel login`, then
-         `devtunnel up dev.<yourdomain> 3000`.
-      Before the NS change lands, `up` cannot create the route — only the random
-      `*.trycloudflare.com` URL of a quick tunnel is available.
+- [ ] **Keep the tunnels running across reboots** — both public endpoints are
+      live but depend on a foreground process plus `warden` on :18982:
+        * <https://dev.codefly.build> — Cloudflare named tunnel (no auth)
+        * <https://antoines-macbook-pro.tail07934c.ts.net> — Funnel (no auth)
+      Tailscale restores its own Funnel config at boot; cloudflared does not.
+      For durability run `sudo cloudflared service install` (installs a launch
+      daemon), and make sure `warden` itself starts on boot — otherwise both
+      URLs resolve and terminate TLS but return 502.
+      Both are unauthenticated by choice. `devtunnel funnel <port> --guard`
+      re-adds the shared-secret gate on the Tailscale side; Cloudflare Access
+      (Zero Trust → Access → Applications) does the same for dev.codefly.build.
       Security note: a running tunnel publishes that local port to the whole
       internet. Put Cloudflare Access in front of it (Zero Trust → Access →
       Applications) for anything that isn't meant to be public.
