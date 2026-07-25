@@ -54,10 +54,9 @@ fi
 
 log "Done. Manual follow-ups (see README → Security):"
 cat <<'EOF'
-  1. Little Snitch: launch it, choose Alert Mode, approve as you go for a few days.
-  2. NextDNS: create a profile at https://nextdns.io (enable threat-intel feeds,
+  1. NextDNS: create a profile at https://nextdns.io (enable threat-intel feeds,
      newly-registered-domain blocking), then install their macOS app or set the
      DNS-over-HTTPS profile in System Settings.
-  3. KnockKnock: run once to audit everything currently persisting on the machine.
-  4. Hardware security key (YubiKey): register on GitHub, Google, and cloud accounts.
+  2. KnockKnock: run once to audit everything currently persisting on the machine.
+  3. Hardware security key (YubiKey): register on GitHub, Google, and cloud accounts.
 EOF

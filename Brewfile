@@ -16,6 +16,7 @@ brew "antidote"                         # zsh plugin manager (loads ~/.zsh_plugi
 # ---------- Modern CLI core ----------
 brew "eza"          # ls replacement
 brew "bat"          # cat with syntax highlighting
+brew "glow"         # render markdown in the terminal (glow file.md)
 brew "ripgrep"      # rg — fast grep
 brew "fd"           # fast find
 brew "fzf"          # fuzzy finder
@@ -26,18 +27,46 @@ brew "btop"         # resource monitor
 brew "tldr"         # simplified man pages
 brew "tree"         # directory tree
 brew "wget"         # downloader
+brew "tmux"         # terminal multiplexer (latest stable via brew)
+brew "just"         # command runner (Makefile replacement) — run `just <task>`
+brew "hyperfine"    # CLI benchmarking tool
+brew "watchexec"    # run a command whenever files change (language-agnostic)
+brew "dust"         # friendlier du (disk usage)
+brew "duf"          # friendlier df (disk free)
+brew "procs"        # ps replacement (Rust) — tree view, colors, search
+brew "sd"           # sed replacement — sane find/replace syntax
+brew "atuin"        # magical shell history (SQLite, fuzzy Ctrl+R) — see zshrc init
+brew "yazi"         # blazing terminal file manager (Rust)
+brew "xh"           # httpie-style HTTP client (Rust) — REST from the terminal
+brew "doggo"        # dig replacement — modern DNS client
+brew "trippy"       # mtr/traceroute replacement (binary: trip)
+brew "gping"        # ping with a live graph
 
 # ---------- Git ----------
 brew "git"
 brew "gh"           # GitHub CLI
 brew "lazygit"      # git TUI
 brew "git-delta"    # better git diffs
+brew "difftastic"   # structural (syntax-aware) diffs — complements delta (binary: difft)
+brew "git-absorb"   # auto-generate fixup! commits into the right ancestor
+# gh-dash (PR/issue TUI dashboard) is a gh extension, not a formula — installed in setup.sh
+brew "schpet/tap/linear"  # Linear CLI — git/gh-aware: start issues as branches, open PRs, agent-friendly
 
 # ---------- Dev environment ----------
 cask "orbstack"     # Docker / Linux VMs (light Docker Desktop replacement)
+brew "lazydocker"   # Docker/container TUI (like lazygit, for containers)
+brew "dive"         # inspect Docker image layers & contents
 brew "mise"         # runtime/version manager (node, python, go, rust)
 brew "neovim"       # editor
 brew "direnv"       # per-directory environment variables
+brew "cloudflared"  # Cloudflare Tunnel — public HTTPS reverse proxy to localhost.
+                    # Use `devtunnel` (bin/devtunnel) for a FIXED hostname via a
+                    # named tunnel; bare `cloudflared tunnel --url` only ever gives
+                    # a throwaway random *.trycloudflare.com URL.
+cask "tailscale-app" # Tailscale (GUI app; the cask formerly named "tailscale").
+                    # Gives `devtunnel funnel` a stable *.ts.net URL with no domain
+                    # or DNS at all. NOT the `tailscale` *formula* — that runs its
+                    # own tailscaled daemon and fights the menu-bar app.
 
 # ---------- Language tooling — LSPs, linters, formatters, test runners ------
 # Python — Astral stack (uv/ruff are Rust, blazing fast)
@@ -47,6 +76,10 @@ brew "ruff"            # linter + formatter (replaces black, flake8, isort)
 # Rust — rustc/cargo/clippy/rustfmt/rust-analyzer come from rustup (see setup.sh)
 brew "bacon"          # background compiler: watch/check/test loop
 brew "cargo-nextest"  # faster, prettier test runner (bacon has a nextest job)
+brew "sccache"        # shared compile cache across projects/branches (RUSTC_WRAPPER, see zshrc)
+brew "cargo-binstall" # install cargo tools as prebuilt binaries (no source compile)
+# Linker: Apple Silicon's default ld-prime is already fast — mold has no macOS
+# support and sold is fragile, so no custom linker here.
 # Go
 brew "gopls"          # official Go language server
 brew "golangci-lint"  # meta-linter (aggregates 50+ linters)
@@ -73,28 +106,37 @@ cask "discord"       # chat/communities
 #   CleanShot X · Bartender · CleanMyMac · Gifox · Sip
 
 # ---------- Security ----------
-cask "little-snitch"  # outbound firewall: per-app/per-domain rules + alert mode (paid — the good one)
-# cask "lulu"         # free outbound firewall (Objective-See) — alternative; do NOT run both
+# cask "lulu"         # free outbound firewall (Objective-See)
 cask "blockblock"     # alerts when anything installs persistence (launch agents/daemons)
 cask "knockknock"     # audits what is already persistently installed — run after setup
 cask "oversight"      # mic/camera access alerts
+brew "age"            # modern file encryption (simple, keypair-based)
 # NextDNS (DNS threat-feed filtering) is account-based — see README → Security.
 
 # ---------- API & gRPC ----------
 cask "bruno"        # REST + gRPC client, local & git-friendly (.bru files)
+brew "protobuf"     # protoc compiler — required by prost-build / tonic Rust builds
 brew "grpcurl"      # curl for gRPC
 brew "grpcui"       # interactive web UI for gRPC
 brew "buf"          # protobuf lint / generate / breaking-change detection
 
 # ---------- AI tools ----------
-# cask "claude"     # Claude Desktop — CDN download flaky in this env; installed separately below
-cask "chatgpt"      # ChatGPT desktop
-cask "codex"        # OpenAI Codex CLI
+# Claude Code (CLI) is NOT installed via brew — it ships its own self-updating
+# native installer (curl -fsSL https://claude.ai/install.sh | bash), living in
+# ~/.local/share/claude. A brew formula would fight its auto-updater. Don't add it.
+# cask "claude"     # Claude *Desktop* GUI (community cask) — optional; enable if you want it
+cask "chatgpt"      # ChatGPT desktop — NOTE: 566MB from a flaky CDN (persistent.oaistatic.com);
+                    # if `brew bundle` fails here with curl(56), just re-run — it resumes.
+cask "codex"        # OpenAI Codex CLI (official cask). No silent auto-update, but
+                    # `codex update` (install-method-aware) or `brew upgrade` keeps it current.
+brew "llm"          # Multi-provider LLM CLI wrapper (OpenAI built in; more via plugins)
 brew "ollama"       # run LLMs locally
 
 # ---------- Cloud / infra ----------
 brew "kubectl"      # Kubernetes CLI
 brew "k9s"          # Kubernetes TUI
+brew "kubectx"      # fast context + namespace switching (installs kubectx & kubens)
+brew "stern"        # multi-pod / multi-container log tailing
 brew "helm"         # Kubernetes package manager
 brew "awscli"       # AWS CLI
 

@@ -1,73 +1,91 @@
 # ~/.zshrc — managed by ~/mac-setup
 
-# ---------- Homebrew ----------
-eval "$(/opt/homebrew/bin/brew shellenv)"
-
-# ---------- PATH ----------
-export PATH="$HOME/.local/bin:$HOME/go/bin:$PATH"   # user-installed + `go install` binaries
-
-# OrbStack ships docker/docker-compose/kubectl in the app bundle (only `orb` is on
-# PATH via the Homebrew cask). Add its CLI dir so `docker` resolves. Guarded so the
-# dotfile stays portable to machines without OrbStack.
-[ -d "/Applications/OrbStack.app/Contents/MacOS/xbin" ] && \
-  export PATH="/Applications/OrbStack.app/Contents/MacOS/xbin:$PATH"
-
 # ---------- History ----------
-HISTFILE=~/.zsh_history
-HISTSIZE=50000
+HISTFILE="$HOME/.zsh_history"
+HISTSIZE=100000
 SAVEHIST=50000
-setopt SHARE_HISTORY HIST_IGNORE_ALL_DUPS HIST_IGNORE_SPACE INC_APPEND_HISTORY
-setopt AUTO_CD INTERACTIVE_COMMENTS
+setopt SHARE_HISTORY HIST_IGNORE_ALL_DUPS HIST_IGNORE_SPACE
+setopt HIST_FCNTL_LOCK HIST_FIND_NO_DUPS HIST_REDUCE_BLANKS HIST_SAVE_NO_DUPS HIST_VERIFY
+setopt AUTO_CD INTERACTIVE_COMMENTS NO_BEEP
+
+# Automatically report resource usage for commands that consume 5+ CPU seconds.
+REPORTTIME=5
+TIMEFMT=$'\n%J  %U user %S system %P cpu %E total'
 
 # ---------- Completions ----------
+[[ -d "$HOME/.config/zsh/completions" ]] &&
+  fpath=("$HOME/.config/zsh/completions" $fpath)
 autoload -Uz compinit && compinit
-zstyle ':completion:*' menu select
+zstyle ':completion:*' menu no
 zstyle ':completion:*' matcher-list 'm:{a-zA-Z}={A-Za-z}'  # case-insensitive
+zstyle ':completion:*:descriptions' format '[%d]'
+zstyle ':fzf-tab:complete:cd:*' fzf-preview \
+  'eza --tree --level=2 --color=always --icons -- $realpath'
+zstyle ':fzf-tab:*' switch-group '<' '>'
 
 # ---------- Key bindings ----------
 # Up/Down search history for entries that START with what you've typed.
-autoload -Uz up-line-or-beginning-search down-line-or-beginning-search
+autoload -Uz up-line-or-beginning-search down-line-or-beginning-search edit-command-line
 zle -N up-line-or-beginning-search
 zle -N down-line-or-beginning-search
+zle -N edit-command-line
 bindkey "^[[A" up-line-or-beginning-search    # Up
 bindkey "^[OA" up-line-or-beginning-search    # Up (application mode)
 bindkey "^[[B" down-line-or-beginning-search  # Down
 bindkey "^[OB" down-line-or-beginning-search  # Down (application mode)
+bindkey '^X^E' edit-command-line               # Ctrl+X Ctrl+E: edit command in $EDITOR
 
 # ---------- Tools ----------
 eval "$(starship init zsh)"        # prompt
 eval "$(zoxide init zsh)"          # smart cd -> use `z <dir>`
 eval "$(mise activate zsh)"        # runtime version manager
 eval "$(direnv hook zsh)"          # per-project env
-source <(fzf --zsh)                # fuzzy finder (Ctrl+R history, Ctrl+T files)
+
+# fzf: keep previews scoped to file/directory pickers so generic fzf pipelines
+# remain useful. Atuin owns Ctrl+R, so ask fzf not to install a competing widget.
+export FZF_DEFAULT_OPTS='--height=70% --layout=reverse --border --info=inline'
+export FZF_CTRL_T_OPTS="
+  --walker-skip .git,node_modules,target,.DS_Store
+  --preview 'if [[ -d {} ]]; then eza --tree --level=2 --color=always --icons -- {}; else bat --style=numbers --color=always --line-range=:500 -- {}; fi'
+  --bind 'ctrl-/:change-preview-window(down,50%|hidden|right,60%)'"
+export FZF_ALT_C_OPTS="
+  --walker-skip .git,node_modules,target,.DS_Store
+  --preview 'eza --tree --level=2 --color=always --icons -- {}'"
+FZF_CTRL_R_COMMAND= source <(fzf --zsh)  # Ctrl+T files, Alt+C directories
+
+# Atuin owns Ctrl+R; --disable-up-arrow preserves the prefix-search bindings above.
+command -v atuin >/dev/null && eval "$(atuin init zsh --disable-up-arrow)"
+
+# sccache: cache Rust (and C/C++) compile artifacts across projects and branches.
+# CARGO_INCREMENTAL=0 because sccache can't cache incremental builds — turning it
+# off lets clean/CI/branch-switch builds hit the cache. Guarded so the dotfile
+# stays portable to machines without sccache. Check stats with `sccache -s`.
+if command -v sccache >/dev/null; then
+  export RUSTC_WRAPPER=sccache
+  export CARGO_INCREMENTAL=0
+fi
 
 # ---------- Aliases (git aliases come from the OMZ git plugin, loaded below) ----------
 alias ls='eza --group-directories-first --icons'
 alias ll='eza -lah --group-directories-first --icons --git'
 alias lt='eza --tree --level=2 --icons'
 alias cat='bat'
-alias cd='z'
 alias vim='nvim'
 alias lg='lazygit'
-alias grep='rg'
-alias ..='cd ..'
-alias ...='cd ../..'
-alias ....='cd ../../..'
+alias ..='builtin cd ..'
+alias ...='builtin cd ../..'
+alias ....='builtin cd ../../..'
 alias reload='exec zsh'
 
 # ---------- Extra shortcuts (curated aliases & functions) ----------
 [ -f "$HOME/.config/zsh/shortcuts.zsh" ] && source "$HOME/.config/zsh/shortcuts.zsh"
 
 # ---------- Plugins (antidote) — LAST so syntax-highlighting wraps everything ----------
-# Plugin list: ~/.zsh_plugins.txt  ·  gives git aliases, autosuggestions, highlighting.
-source $(brew --prefix)/opt/antidote/share/antidote/antidote.zsh
-antidote load
-
-# Added by LM Studio CLI (lms)
-export PATH="$PATH:/Users/antoine/.lmstudio/bin"
-# End of LM Studio CLI section
-
-
-
-# Added by Antigravity CLI installer
-export PATH="/Users/antoine/.local/bin:$PATH"
+# Plugin list: ~/.zsh_plugins.txt · fuzzy Tab completion, git aliases,
+# autosuggestions, and highlighting. Avoid a `brew --prefix` process at startup.
+_antidote_zsh="${HOMEBREW_PREFIX:-/opt/homebrew}/opt/antidote/share/antidote/antidote.zsh"
+if [[ -r "$_antidote_zsh" ]]; then
+  source "$_antidote_zsh"
+  antidote load
+fi
+unset _antidote_zsh

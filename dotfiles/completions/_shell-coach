@@ -1,0 +1,16 @@
+#compdef shell-coach
+
+_shell-coach() {
+  _arguments \
+    '--limit[analyze at most this many recent commands]:command count:' \
+    '--top[show this many rule-based suggestions]:suggestion count:' \
+    '--all[show every qualifying rule-based suggestion]' \
+    '--history-file[read one command per line from a file]:history file:_files' \
+    '--stdin[read one command per line from standard input]' \
+    '--llm[add a privacy-preserving local LM Studio review]' \
+    '--show-llm-prompt[print the anonymized prompt without calling LM Studio]' \
+    '--model[use a specific LM Studio model key]:model key:' \
+    '--no-color[disable ANSI styling]' \
+    '(-h --help)'{-h,--help}'[show help]' \
+    '(-v --version)'{-v,--version}'[show version]'
+}

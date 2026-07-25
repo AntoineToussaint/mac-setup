@@ -1,0 +1,15 @@
+# ~/.zprofile — managed by ~/mac-setup
+# Login-shell setup belongs here so child shells inherit it without repeating
+# the work on every `exec zsh` or nested interactive shell.
+
+# Homebrew supplies PATH plus its manpage and info search paths. The absolute
+# binary path bootstraps Apple Silicon Macs before Homebrew is on PATH.
+if [[ -x /opt/homebrew/bin/brew ]]; then
+  eval "$(/opt/homebrew/bin/brew shellenv zsh)"
+fi
+
+# Shims expose mise-managed tools to login/non-interactive consumers such as
+# IDEs. Interactive shells replace this with full directory-aware activation.
+if command -v mise >/dev/null 2>&1; then
+  eval "$(mise activate zsh --shims)"
+fi

@@ -1,0 +1,26 @@
+# ~/.zshenv — managed by ~/mac-setup
+#
+# Zsh reads this file for every invocation, including scripts. Keep it limited
+# to quiet, dependency-free environment setup; interactive behavior belongs in
+# ~/.zshrc and login-shell initialization belongs in ~/.zprofile.
+
+# Ensure repeated shell reloads cannot accumulate duplicate PATH entries. `path`
+# is Zsh's array view of PATH; the unique attribute keeps the first occurrence.
+typeset -U path PATH
+path=(
+  "$HOME/.local/bin"       # user-installed CLIs (Claude, Antigravity, etc.)
+  "$HOME/.cargo/bin"       # `cargo install` binaries
+  "$HOME/go/bin"           # `go install` binaries
+  $path
+)
+
+# Application-provided CLIs. Only add them on machines where they exist.
+[[ -d "/Applications/OrbStack.app/Contents/MacOS/xbin" ]] &&
+  path=("/Applications/OrbStack.app/Contents/MacOS/xbin" $path)
+[[ -d "$HOME/.lmstudio/bin" ]] && path+=("$HOME/.lmstudio/bin")
+
+export PATH
+export EDITOR=nvim
+export VISUAL="$EDITOR"
+export PAGER=less
+export LESS='-FRX'

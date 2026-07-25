@@ -88,15 +88,9 @@ app() { # app <name.app> <label> [<hint>]
   if [ -d "/Applications/$1" ]; then ok "$2 installed"
   else bad "$2 missing${3:+ — $3}"; fi
 }
-app "Little Snitch.app"      "Little Snitch"    "brew install --cask little-snitch"
 app "BlockBlock Helper.app"  "BlockBlock"       "brew install --cask blockblock"
 app "KnockKnock.app"         "KnockKnock"       "brew install --cask knockknock"
 app "OverSight.app"          "OverSight"        "brew install --cask oversight"
-if pgrep -qf "littlesnitch.daemon"; then
-  ok "Little Snitch daemon running (Alert Mode setup: see TODO.md)"
-else
-  warn "Little Snitch daemon not running — launch the app and enable it"
-fi
 # NextDNS: heuristic — pass if their app is installed or the resolver is theirs.
 if [ -d "/Applications/NextDNS.app" ] \
    || scutil --dns 2>/dev/null | grep -qE "nameserver.*45\.90\.(28|30)\."; then
@@ -111,12 +105,78 @@ linkcheck() { # linkcheck <dest> <src>
   if [ "$(readlink "$1" 2>/dev/null)" = "$2" ]; then ok "$1"
   else bad "$1 not linked to $2 — re-run setup.sh"; fi
 }
+linkcheck "$HOME/.zshenv"                    "$DOTS/zshenv"
+linkcheck "$HOME/.zprofile"                  "$DOTS/zprofile"
 linkcheck "$HOME/.zshrc"                     "$DOTS/zshrc"
 linkcheck "$HOME/.config/zsh/shortcuts.zsh"  "$DOTS/shortcuts.zsh"
 linkcheck "$HOME/.zsh_plugins.txt"           "$DOTS/zsh_plugins.txt"
+linkcheck "$HOME/.config/zsh/completions/_shell-coach" "$DOTS/completions/_shell-coach"
+linkcheck "$HOME/.local/bin/shell-coach"     "$DIR/bin/shell-coach"
+linkcheck "$HOME/.local/bin/devtunnel"       "$DIR/bin/devtunnel"
+linkcheck "$HOME/.local/bin/devtunnel-guard" "$DIR/bin/devtunnel-guard"
 linkcheck "$HOME/.config/starship.toml"      "$DOTS/starship.toml"
 linkcheck "$HOME/.config/ghostty/config"     "$DOTS/ghostty-config"
 linkcheck "$HOME/.gitconfig"                 "$DOTS/gitconfig"
+check "zsh startup files parse" zsh -n \
+  "$DOTS/zshenv" "$DOTS/zprofile" "$DOTS/zshrc" "$DOTS/shortcuts.zsh" \
+  "$DOTS/completions/_shell-coach" "$DIR/bin/shell-coach" "$DIR/bin/devtunnel"
+check "shell-coach starts" "$DIR/bin/shell-coach" --version
+check "shell-coach behavior and privacy tests" "$DIR/tests/shell-coach_test.zsh"
+check "devtunnel starts" "$DIR/bin/devtunnel" --version
+check "devtunnel behavior tests" "$DIR/tests/devtunnel_test.zsh"
+
+# ---------- Local dev tunnel --------------------------------------------------
+section "Cloudflare tunnel (devtunnel)"
+if command -v cloudflared >/dev/null 2>&1; then
+  ok "cloudflared installed ($(cloudflared --version 2>/dev/null | head -1))"
+  # cert.pem is the per-account origin certificate; without it a named tunnel
+  # (the only kind with a fixed hostname) cannot be created or routed.
+  if [ -f "$HOME/.cloudflared/cert.pem" ]; then ok "cloudflared authenticated"
+  else warn "cloudflared not authenticated — run 'devtunnel login' before the first tunnel"; fi
+  N=$(ls "$HOME"/.cloudflared/dev-*.yml 2>/dev/null | wc -l | tr -d ' ')
+  [ "$N" -gt 0 ] && ok "$N devtunnel hostname(s) configured — 'devtunnel ls'" \
+                 || warn "no devtunnel hostnames yet — 'devtunnel up <host> <port>'"
+else
+  bad "cloudflared missing — brew bundle --file=$DIR/Brewfile"
+fi
+
+# Tailscale is the no-domain path to a stable public URL (devtunnel funnel).
+if [ -x /Applications/Tailscale.app/Contents/MacOS/Tailscale ]; then
+  ok "Tailscale.app installed"
+  # The CLI must be the app's own /usr/local/bin shim. A symlink into the bundle
+  # from anywhere else dies on SIGTRAP (broken code signature), and zshenv's
+  # PATH order would let such a symlink shadow the working shim.
+  if [ -L "$HOME/.local/bin/tailscale" ]; then
+    bad "~/.local/bin/tailscale is a symlink — it shadows the app shim and crashes; rm it"
+  elif command -v tailscale >/dev/null 2>&1 && tailscale version >/dev/null 2>&1; then
+    ok "tailscale CLI works ($(command -v tailscale))"
+  else
+    warn "tailscale CLI not usable — log into Tailscale.app once to install its shim"
+  fi
+  TS_STATE=$(tailscale status --json 2>/dev/null | jq -r '.BackendState // "unreachable"' 2>/dev/null)
+  case "$TS_STATE" in
+    Running)
+      TS_URL="https://$(tailscale status --json 2>/dev/null | jq -r '.Self.DNSName // "?"' | sed 's/\.$//')"
+      ok "Tailscale connected as ${TS_URL#https://}"
+      # The whole point of the funnel URL is that CI can hard-code it. If the
+      # device is renamed or re-registered the name changes silently, so compare
+      # against the pinned value and fail loudly rather than let CI 404.
+      PIN="${XDG_CONFIG_HOME:-$HOME/.config}/devtunnel/funnel-url"
+      if [ -s "$PIN" ]; then
+        if [ "$(cat "$PIN")" = "$TS_URL" ]; then
+          ok "funnel URL matches the pin ($TS_URL)"
+        else
+          bad "funnel URL CHANGED — pinned $(cat "$PIN"), now $TS_URL; update the CI secret then 'devtunnel funnel pin'"
+        fi
+      else
+        warn "funnel URL not pinned — run 'devtunnel funnel pin' to catch future drift"
+      fi
+      ;;
+    *) warn "Tailscale not connected (state: $TS_STATE) — open the app and log in" ;;
+  esac
+else
+  warn "Tailscale.app missing — brew bundle --file=$DIR/Brewfile (needed for 'devtunnel funnel')"
+fi
 
 # ---------- Packages & runtimes ----------------------------------------------
 section "Homebrew"

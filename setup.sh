@@ -3,26 +3,47 @@
 # Review before running. Re-runnable (idempotent).
 #
 #   Setup + update everything:  bash ~/mac-setup/setup.sh
+#   User-space updates, no sudo: bash ~/mac-setup/setup.sh --user-only
 #   Skip security hardening:    bash ~/mac-setup/setup.sh --no-security
+#   Install everything, no prompts (CI/unattended):  bash ~/mac-setup/setup.sh --yes
+#   Re-choose language toolchains:  bash ~/mac-setup/setup.sh --reconfigure
 #
 # One command does it all: installs anything missing, upgrades Homebrew
-# packages, mise runtimes, and Nix, and applies security hardening
-# (security.sh — secure by default; opt out with --no-security).
+# packages, mise runtimes, and Nix, applies security hardening, and verifies the
+# result with doctor.sh. Use --user-only to skip every sudo-dependent step, or
+# --no-security to upgrade Nix but skip security hardening.
+#
+# On the first run, toolchains already configured in mise are adopted without
+# prompting. It only asks about unconfigured toolchains (Node, Python, Go,
+# Rust); press Enter to accept the default (yes). Choices are saved to
+# ~/.config/mac-setup/toolchains.env and reused silently on later runs — pass
+# --reconfigure to be asked again. Pass --yes, or run non-interactively (no
+# TTY), to install all of them without prompting.
 set -euo pipefail
 
 export HOMEBREW_NO_ENV_HINTS=1   # quiet Homebrew's hint chatter (errors still show)
+# Homebrew 6's parallel downloader (concurrency "auto") can deadlock: it prints
+# "Fetching a, b, c, …" then hangs with no active curl. Force serial downloads —
+# a bit slower, but reliable. Remove once the upstream hang is fixed.
+export HOMEBREW_DOWNLOAD_CONCURRENCY=1
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DOTS="$DIR/dotfiles"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 
 SECURITY=1
+USER_ONLY=0
+ASSUME_YES=0
+RECONFIGURE=0
 for arg in "$@"; do
   case "$arg" in
+    --user-only) USER_ONLY=1 ;;
     --no-security) SECURITY=0 ;;
+    -y|--yes) ASSUME_YES=1 ;;
+    --reconfigure) RECONFIGURE=1 ;;   # re-prompt for toolchains, ignoring saved choices
     -h|--help)
       awk 'NR>1 { if (/^#/) { sub(/^# ?/,""); print } else exit }' "${BASH_SOURCE[0]}"; exit 0 ;;
-    *) echo "Unknown option: $arg (use --no-security or --help)" >&2; exit 1 ;;
+    *) echo "Unknown option: $arg (use --user-only, --no-security, --yes, --reconfigure, or --help)" >&2; exit 1 ;;
   esac
 done
 
@@ -36,6 +57,16 @@ link() { # link SRC -> DEST, backing up any existing real file
   fi
   ln -sfn "$src" "$dest"
   echo "linked $dest -> $src"
+}
+ask() { # ask "Question?" — yes/no prompt, default yes. Auto-yes with --yes or no TTY.
+  if [ "$ASSUME_YES" -eq 1 ] || [ ! -t 0 ]; then return 0; fi
+  local reply
+  printf "\033[1;36m??\033[0m %s [Y/n] " "$*"
+  read -r reply
+  case "$reply" in
+    [nN]|[nN][oO]) return 1 ;;
+    *) return 0 ;;
+  esac
 }
 retry() { # retry <n> <cmd...> — re-run a flaky (usually network) command with backoff
   local n="$1"; shift
@@ -56,14 +87,35 @@ retry() { # retry <n> <cmd...> — re-run a flaky (usually network) command with
 # single time here and keep the credential warm for the whole run so the long
 # brew step in between doesn't let it expire. Run this script as your normal
 # user — never `sudo bash setup.sh` (that would run brew/mise/dotfiles as root).
-log "Caching sudo (you'll be asked once)"
-sudo -v
-while true; do sudo -n true; sleep 60; kill -0 "$$" 2>/dev/null || exit; done &
-trap 'kill %1 2>/dev/null' EXIT
+if [ "$USER_ONLY" -eq 0 ]; then
+  log "Caching sudo (you'll be asked once)"
+  if ! sudo -v; then
+    log "Could not cache sudo now — you may be prompted again at the Nix/security steps."
+  fi
+  # Keep the sudo timestamp warm for the whole run, QUIETLY. `sudo -n true` can't
+  # renew a lapsed/tty-scoped ticket and would otherwise print "sudo: a password
+  # is required" mid-run (alarming but harmless) — so send its stderr to /dev/null.
+  # Refresh every 30s (well under the default 5-min timeout) and stop when we exit.
+  ( while kill -0 "$$" 2>/dev/null; do sudo -n true 2>/dev/null; sleep 30; done ) &
+  SUDO_KEEPALIVE_PID=$!
+  trap 'kill "$SUDO_KEEPALIVE_PID" 2>/dev/null' EXIT
+else
+  log "User-only mode — skipping sudo, Nix, and security hardening"
+fi
 
 # 1) Homebrew packages -------------------------------------------------------
+# NOTE on hangs: a *corrupt* cached bottle (rare — usually left by a hard-killed
+# run) can make Homebrew 6 FREEZE silently ("Fetching <pkg>…", no curl, no
+# error). If that happens, scrub the cache once with `brew cleanup -s` and
+# re-run. We deliberately DON'T auto-delete *.incomplete files here: those let
+# large flaky downloads (e.g. the ChatGPT cask) RESUME across re-runs.
 log "Refreshing Homebrew and installing packages (Brewfile)"
 brew update
+# Homebrew 6 refuses to install formulae from third-party taps unless trusted.
+# The Brewfile uses schpet/tap for the Linear CLI — trust it so `brew bundle`
+# doesn't abort the whole batch. No-ops if already trusted / tap absent.
+brew tap schpet/tap >/dev/null 2>&1 || true
+brew trust schpet/tap >/dev/null 2>&1 || true
 brew bundle --file="$DIR/Brewfile"
 log "Upgrading Homebrew packages"
 brew upgrade --yes
@@ -72,28 +124,93 @@ brew cleanup
 
 # 2) Dotfiles (symlinked so future edits in ~/mac-setup take effect) ---------
 log "Linking dotfiles"
+link "$DOTS/zshenv"         "$HOME/.zshenv"
+link "$DOTS/zprofile"       "$HOME/.zprofile"
 link "$DOTS/zshrc"          "$HOME/.zshrc"
 link "$DOTS/shortcuts.zsh"  "$HOME/.config/zsh/shortcuts.zsh"
 link "$DOTS/zsh_plugins.txt" "$HOME/.zsh_plugins.txt"
+link "$DOTS/completions/_shell-coach" "$HOME/.config/zsh/completions/_shell-coach"
+link "$DIR/bin/shell-coach" "$HOME/.local/bin/shell-coach"
+link "$DIR/bin/devtunnel"   "$HOME/.local/bin/devtunnel"
+link "$DIR/bin/devtunnel-guard" "$HOME/.local/bin/devtunnel-guard"
 link "$DOTS/starship.toml"  "$HOME/.config/starship.toml"
 link "$DOTS/ghostty-config" "$HOME/.config/ghostty/config"
 link "$DOTS/gitconfig"      "$HOME/.gitconfig"
 
 # 3) Languages via mise ------------------------------------------------------
-log "Installing language runtimes via mise (node, python, go, rust)"
+# Toolchain choices are remembered across runs in $TOOLCHAIN_PREFS. When that
+# file is missing, existing mise selections are adopted and only unconfigured
+# toolchains are prompted for. The answers are saved and reused silently
+# thereafter. --reconfigure asks again; --yes installs everything for this run
+# without clobbering a saved selection. Each choice covers the runtime plus its
+# extra tooling.
+log "Choosing language toolchains"
+TOOLCHAIN_PREFS="$HOME/.config/mac-setup/toolchains.env"
+if [ -f "$TOOLCHAIN_PREFS" ] && [ "$RECONFIGURE" -eq 0 ]; then
+  # shellcheck source=/dev/null
+  . "$TOOLCHAIN_PREFS"
+  if [ "$ASSUME_YES" -eq 1 ]; then WANT_NODE=1; WANT_PYTHON=1; WANT_GO=1; WANT_RUST=1; fi
+  log "Using saved choices from $TOOLCHAIN_PREFS (run with --reconfigure to change)"
+else
+  # A missing preferences file does not necessarily mean a new machine. Adopt
+  # toolchains already selected in mise instead of asking to "install" them
+  # again. --reconfigure intentionally bypasses this detection.
+  if [ "$RECONFIGURE" -eq 0 ] && mise current node >/dev/null 2>&1; then
+    WANT_NODE=1
+    echo "using existing mise Node configuration"
+  else
+    ask "Install Node (lts)?" && WANT_NODE=1 || WANT_NODE=0
+  fi
+  if [ "$RECONFIGURE" -eq 0 ] && mise current python >/dev/null 2>&1; then
+    WANT_PYTHON=1
+    echo "using existing mise Python configuration"
+  else
+    ask "Install Python?" && WANT_PYTHON=1 || WANT_PYTHON=0
+  fi
+  if [ "$RECONFIGURE" -eq 0 ] && mise current go >/dev/null 2>&1; then
+    WANT_GO=1
+    echo "using existing mise Go configuration"
+  else
+    ask "Install Go + air?" && WANT_GO=1 || WANT_GO=0
+  fi
+  if [ "$RECONFIGURE" -eq 0 ] && mise current rust >/dev/null 2>&1; then
+    WANT_RUST=1
+    echo "using existing mise Rust configuration"
+  else
+    ask "Install Rust + tauri-cli?" && WANT_RUST=1 || WANT_RUST=0
+  fi
+  # Persist for next time (skip under --yes so an unattended run can't overwrite
+  # a real selection with all-on). Delete the file or use --reconfigure to reset.
+  if [ "$ASSUME_YES" -eq 0 ]; then
+    mkdir -p "$(dirname "$TOOLCHAIN_PREFS")"
+    cat > "$TOOLCHAIN_PREFS" <<EOF
+# mac-setup toolchain choices — reused on each run. Edit, delete, or run
+# 'setup.sh --reconfigure' to change. Generated $(date +%Y-%m-%d).
+WANT_NODE=$WANT_NODE
+WANT_PYTHON=$WANT_PYTHON
+WANT_GO=$WANT_GO
+WANT_RUST=$WANT_RUST
+EOF
+    log "Saved choices to $TOOLCHAIN_PREFS"
+  fi
+fi
+
+log "Installing selected language runtimes via mise"
 eval "$(mise activate bash)"
-# Use precompiled Python (astral python-build-standalone) instead of compiling
-# from source — faster, and avoids the pyenv git-clone step that fails on a
-# transient network blip.
-mise settings set python.compile false
+if [ "$WANT_PYTHON" -eq 1 ]; then
+  # Use precompiled Python (astral python-build-standalone) instead of compiling
+  # from source — faster, and avoids the pyenv git-clone step that fails on a
+  # transient network blip.
+  mise settings set python.compile false
+fi
 # Wrapped in retry(): downloads from mise-versions.jdx.dev / GitHub occasionally
 # refuse a connection on a network hiccup. The block is idempotent — a retry
 # skips already-installed runtimes and only re-attempts what failed.
 install_runtimes() {
-  mise use --global node@lts
-  mise use --global python@latest
-  mise use --global go@latest
-  mise use --global rust@latest
+  if [ "$WANT_NODE" -eq 1 ];   then mise use --global node@lts;      fi
+  if [ "$WANT_PYTHON" -eq 1 ]; then mise use --global python@latest; fi
+  if [ "$WANT_GO" -eq 1 ];     then mise use --global go@latest;     fi
+  if [ "$WANT_RUST" -eq 1 ];   then mise use --global rust@latest;   fi
   mise install
 }
 retry 4 install_runtimes
@@ -101,20 +218,71 @@ log "Upgrading mise-managed runtimes"
 retry 3 mise upgrade
 
 # 3b) Extra language tooling not covered by Homebrew -------------------------
-# Rust: ensure rustup components (rust-analyzer/clippy/rustfmt) are present.
-if command -v rustup >/dev/null 2>&1; then
-  log "Ensuring rustup components (rust-analyzer, clippy, rustfmt)"
-  rustup component add rust-analyzer clippy rustfmt 2>/dev/null || true
+if [ "$WANT_RUST" -eq 1 ]; then
+  # Rust: ensure rustup components (rust-analyzer/clippy/rustfmt) are present.
+  if command -v rustup >/dev/null 2>&1; then
+    log "Ensuring rustup components (rust-analyzer, clippy, rustfmt)"
+    rustup component add rust-analyzer clippy rustfmt 2>/dev/null || true
+  fi
+  # Rust: `tauri-cli` (needed by mind-desktop) has no Homebrew formula. Prefer
+  # cargo-binstall (prebuilt binary, seconds) and fall back to compiling from
+  # source. Lands in ~/.cargo/bin, which zshenv adds to PATH. Skip if present.
+  if command -v cargo >/dev/null 2>&1 && ! command -v cargo-tauri >/dev/null 2>&1; then
+    log "Installing cargo tools (tauri-cli v2)"
+    if command -v cargo-binstall >/dev/null 2>&1; then
+      cargo binstall --no-confirm 'tauri-cli@^2' || cargo install tauri-cli --version '^2'
+    else
+      cargo install tauri-cli --version '^2'
+    fi
+  fi
 fi
-# Go: `air` (live reload) has no stable Homebrew formula — install via go.
-# Lands in $(go env GOPATH)/bin = ~/go/bin, which zshrc adds to PATH.
-if command -v go >/dev/null 2>&1; then
-  log "Installing Go tools via go install (air — live reload)"
-  go install github.com/air-verse/air@latest
+if [ "$WANT_GO" -eq 1 ]; then
+  # Go: `air` (live reload) has no stable Homebrew formula — install via go.
+  # Lands in $(go env GOPATH)/bin = ~/go/bin, which zshenv adds to PATH.
+  if command -v go >/dev/null 2>&1; then
+    log "Installing Go tools via go install (air — live reload)"
+    go install github.com/air-verse/air@latest
+  fi
+fi
+
+# Tailscale: do NOT symlink the CLI into ~/.local/bin. The app installs its own
+# shim at /usr/local/bin/tailscale on first login, and that shim calls the
+# in-bundle binary by its real path. Reaching that binary through a symlink from
+# elsewhere breaks its bundle code signature and the process dies on SIGTRAP —
+# and because zshenv puts ~/.local/bin early in PATH, such a symlink shadows the
+# working shim in every zsh. Deliberately the cask, not the `tailscale` formula:
+# the formula runs a second tailscaled that fights the menu-bar app.
+if [ ! -x /Applications/Tailscale.app/Contents/MacOS/Tailscale ]; then
+  log "Tailscale.app not found — 'devtunnel funnel' will be unavailable"
+elif ! command -v tailscale >/dev/null 2>&1; then
+  log "Tailscale CLI not on PATH yet — log into Tailscale.app once and it installs /usr/local/bin/tailscale"
+fi
+
+# gh extensions: gh-dash (PR/issue TUI dashboard) has no Homebrew formula.
+if command -v gh >/dev/null 2>&1; then
+  if ! gh extension list 2>/dev/null | grep -q 'dlvhdr/gh-dash'; then
+    log "Installing gh extension: gh-dash (PR/issue dashboard — run with 'gh dash')"
+    gh extension install dlvhdr/gh-dash || log "gh-dash install skipped (gh not authenticated yet? run 'gh extension install dlvhdr/gh-dash' later)"
+  fi
+fi
+
+# Claude Code (CLI): install via the official self-updating native installer —
+# NOT Homebrew. It's Anthropic's recommended method, auto-updates in the
+# background, and lands in ~/.local/bin (already on PATH via zshenv). A brew cask
+# exists but doesn't auto-update. Skip if already present (it updates itself).
+# Docs: https://code.claude.com/docs/en/setup
+if ! command -v claude >/dev/null 2>&1; then
+  log "Installing Claude Code (native installer — self-updating)"
+  retry 3 bash -c 'set -o pipefail; curl -fsSL https://claude.ai/install.sh | bash' \
+    || log "Claude Code install failed — install later: curl -fsSL https://claude.ai/install.sh | bash"
+else
+  log "Claude Code present ($(claude --version 2>/dev/null || echo installed)) — it self-updates"
 fi
 
 # 4) Nix (Determinate installer — NOT via Homebrew) --------------------------
-if command -v nix >/dev/null 2>&1; then
+if [ "$USER_ONLY" -eq 1 ]; then
+  log "Skipping Nix (--user-only)"
+elif command -v nix >/dev/null 2>&1; then
   log "Upgrading Nix (Determinate)"
   if command -v determinate-nixd >/dev/null 2>&1; then
     sudo determinate-nixd upgrade
@@ -127,19 +295,45 @@ else
 fi
 
 # 5) Security hardening (secure by default — skip with --no-security) --------
-if [ "$SECURITY" -eq 1 ]; then
+if [ "$USER_ONLY" -eq 1 ]; then
+  log "Skipping security hardening (--user-only)"
+elif [ "$SECURITY" -eq 1 ]; then
   log "Applying security hardening (security.sh — will prompt for sudo)"
   bash "$DIR/security.sh"
 else
   log "Skipping security hardening (--no-security)"
 fi
 
-log "Done. Next steps:"
-cat <<'EOF'
-  1. Restart your terminal (or: exec zsh) to load the new shell config.
-  2. Open Ghostty and set it as your default terminal.
-  3. Authenticate GitHub CLI:   gh auth login
-  4. Edit ~/mac-setup/dotfiles/gitconfig if name/email need changes.
-  5. Sign in to Setapp and install a window manager (Swish / Rectangle Pro /
-     Mosaic) — TablePlus, DevUtils, Paste, and CleanShot X are also worth it.
-EOF
+log "Checking conditional follow-ups"
+NEXT_STEP=0
+next_step() {
+  NEXT_STEP=$((NEXT_STEP+1))
+  printf "  %d. %s\n" "$NEXT_STEP" "$*"
+}
+
+if ! gh auth status >/dev/null 2>&1; then
+  next_step "Authenticate GitHub CLI: gh auth login"
+fi
+
+LINEAR_AUTH_STATE="$(linear auth list 2>/dev/null || true)"
+if [ -z "$LINEAR_AUTH_STATE" ] || [[ "$LINEAR_AUTH_STATE" == *"No workspaces configured"* ]]; then
+  next_step "Authenticate Linear CLI: linear auth login"
+fi
+
+if [ -z "$(git config --global user.name 2>/dev/null)" ] \
+   || [ -z "$(git config --global user.email 2>/dev/null)" ]; then
+  next_step "Set your Git identity in ~/mac-setup/dotfiles/gitconfig"
+fi
+
+if [ "$NEXT_STEP" -eq 0 ]; then
+  echo "  No authentication or identity follow-ups detected."
+fi
+
+# 6) Verification ------------------------------------------------------------
+log "Verifying setup (doctor.sh)"
+if bash "$DIR/doctor.sh"; then
+  log "Setup verified successfully"
+else
+  log "Updates completed, but doctor.sh found failures that need attention"
+  exit 1
+fi

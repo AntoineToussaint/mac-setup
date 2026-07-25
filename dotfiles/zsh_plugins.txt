@@ -1,6 +1,10 @@
 # ~/.zsh_plugins.txt — managed by ~/mac-setup, loaded by antidote.
 # Add a plugin = add a line here, then run `reload`.
 
+# fzf-tab must load after compinit (run by zshrc) and before widget-wrapping
+# plugins such as autosuggestions and syntax highlighting.
+Aloxaf/fzf-tab
+
 zsh-users/zsh-autosuggestions
 
 # Oh My Zsh git plugin: gst, gco, gcb, gp, gl, glog, ... (maintained upstream)

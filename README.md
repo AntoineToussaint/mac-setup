@@ -5,17 +5,18 @@ Reproducible macOS developer setup for Apple Silicon — Homebrew packages, dotf
 ## Setup / Usage
 
 ```bash
-bash ~/mac-setup/setup.sh                 # setup + update + security hardening (idempotent)
-bash ~/mac-setup/setup.sh --no-security   # skip the security hardening step
+bash ~/mac-setup/setup.sh                 # full update + hardening + verification
+bash ~/mac-setup/setup.sh --user-only     # Homebrew/dotfiles/mise; no sudo
+bash ~/mac-setup/setup.sh --no-security   # update Nix but skip security hardening
 bash ~/mac-setup/setup.sh --help          # usage
-bash ~/mac-setup/security.sh              # security hardening alone (also run by setup.sh)
-bash ~/mac-setup/doctor.sh                # validate the setup (read-only, no sudo)
+bash ~/mac-setup/security.sh              # security hardening alone
+bash ~/mac-setup/doctor.sh                # standalone read-only verification
 ```
 
 One command does it all, and it's re-runnable: installs anything missing,
 upgrades what's already there (`brew upgrade`, `mise upgrade`, Determinate Nix
-upgrade), and applies security hardening — **secure by default**; the only flag
-is to opt out.
+upgrade), applies security hardening, and verifies the result. It is **secure by
+default**; use `--user-only` when you explicitly want a sudo-free update.
 
 What it does:
 
@@ -24,12 +25,14 @@ What it does:
 3. **Runtimes** — installs and upgrades node/python/go/rust via [mise](https://mise.jdx.dev), plus rustup components and Go's `air`.
 4. **Nix** — Determinate Systems installer / upgrade (not via Homebrew).
 5. **Security** — runs [`security.sh`](security.sh): firewall + stealth, auto-updates, npm `ignore-scripts`, Touch ID for sudo (skip with `--no-security`).
+6. **Verification** — runs [`doctor.sh`](doctor.sh) and exits non-zero if a machine-checkable requirement fails.
 
-After a first run: restart your terminal (`exec zsh`), set Ghostty as default, and `gh auth login`.
+At the end, `setup.sh` prints only authentication or identity follow-ups that
+live checks show are still needed.
 
-To verify everything took, run [`doctor.sh`](doctor.sh) — it checks the hardening,
-dotfile symlinks, Brewfile, runtimes, and credentials, and lists any manual
-follow-ups still unchecked in [`TODO.md`](TODO.md).
+`setup.sh` runs [`doctor.sh`](doctor.sh) automatically. You can also run it
+standalone at any time; it checks hardening, dotfile symlinks, the Brewfile,
+runtimes, and credentials, then lists unchecked manual items from [`TODO.md`](TODO.md).
 
 ---
 
@@ -47,7 +50,6 @@ Layers (mostly automated by [`security.sh`](security.sh) + the Brewfile's Securi
 | Credentials | Phishing-proof 2FA | Hardware key (YubiKey) on GitHub / Google / cloud — manual |
 | Supply chain | npm install scripts disabled globally | `security.sh` (`ignore-scripts=true`; pnpm ≥10 and bun already block by default) |
 | Supply chain | Untrusted code off the bare machine | Run interview projects / unknown repos in OrbStack containers |
-| Egress | See + block outbound traffic per app/domain | Little Snitch (Brewfile) — Alert Mode for a few days, then rules |
 | Egress | Block known-bad domains system-wide | [NextDNS](https://nextdns.io) with threat-intel feeds — manual, account-based |
 | Detection | Persistence + mic/camera alerts | BlockBlock, KnockKnock, OverSight (Brewfile) |
 | OS | Firewall + stealth, auto-updates, Touch ID sudo | `security.sh` |
@@ -64,93 +66,192 @@ Rules of thumb:
 
 ---
 
-## Shell Shortcuts
+## Shell cockpit
 
-A curated set of zsh aliases and functions worth adding to `dotfiles/zshrc`.
+The managed Zsh setup is split by lifecycle: `zshenv` contains quiet universal
+environment defaults, `zprofile` initializes login-shell tooling, `zshrc`
+configures the interactive shell, and `shortcuts.zsh` owns curated functions.
 
-These are chosen to **complement** what's already configured, not repeat it. The current setup already gives you:
+### Navigation
 
-- **zoxide** — `cd` is aliased to `z` (smart jump); `zi` opens an interactive, searchable cd-history picker
-- **fzf** — `Ctrl+R` fuzzy history search, `Ctrl+T` fuzzy file picker
-- **eza** — `ls`, `ll`, `lt` (tree); **bat** for `cat`; **nvim** for `vim`; **lazygit** for `lg`; **rg** for `grep`
-- **Nav** — `..`, `...`, `....`, `AUTO_CD`, `reload`
-- **git** — full alias set from the antidote/OMZ git plugin
-- **History** — shared across sessions, prefix search on `Up`/`Down`
+- `cd path` — standard Zsh directory navigation; it is deliberately not aliased.
+- `z name` / `zi` — zoxide smart jump and interactive fuzzy history.
+- `-` or `cd -` — toggle back to the previous directory.
+- `..`, `...`, `....` — move up one, two, or three directories.
+- `bd name` — jump up to the nearest ancestor whose name starts with `name`.
+- `fcd [root]` — fuzzy-select a subdirectory, excluding `.git`, `node_modules`, and `target`.
+- `mkcd dir` — create a directory and enter it.
+- `y` — browse with Yazi and keep its final directory when it exits.
 
----
+### Finding, completion, and history
 
-## Quick exits & basics
+- `Ctrl+R` — Atuin history search; `Up`/`Down` retain prefix search.
+- `Ctrl+T` — fzf file/directory picker with `bat`/`eza` preview.
+- `Alt+C` — fzf directory picker with tree preview.
+- `Tab` — fzf-tab completion for commands, options, files, branches, and other Zsh completions.
+- `Ctrl+X Ctrl+E` — edit the current command line in `$EDITOR` (Neovim).
+- `rg` remains explicit rather than replacing `grep`; `h` and `hg` expose native history.
 
-```zsh
-alias x='exit'
-alias c='clear'
-```
+### Utilities
 
-## Directory navigation
+- `ls`, `ll`, `lt` use eza; `cat` uses bat; `vim` uses Neovim; `lg` opens lazygit.
+- `ports` lists TCP listeners; `killport PORT` sends TERM and `killport --force PORT` sends KILL.
+- `extract ARCHIVE` validates and extracts common tar, gzip, bzip2, xz, and zip formats.
+- Global aliases `G`, `L`, and `H` append `| rg`, `| less`, and `| head` to a command.
+- Commands consuming at least five CPU seconds automatically print a timing summary.
 
-```zsh
-# bd <name>: jump UP to an ancestor directory whose name matches <name>
-bd() { cd "$(pwd | sed "s|\(.*/$1[^/]*/\).*|\1|")"; }
+### Shell Coach
 
-# mkcd <dir>: make a directory and cd into it
-mkcd() { mkdir -p "$1" && cd "$1"; }
-
-# toggle back to the previous directory
-alias -- -='cd -'
-```
-
-> Note: for cd **history**, zoxide's `zi` already gives you an interactive fuzzy picker — no custom function needed.
-
-## History
-
-```zsh
-alias h='history'
-alias hg='history | rg'   # search shell history: hg <pattern>
-```
-
-## Extract any archive
+`shell-coach` (or `coach`) reviews recent Atuin history and ranks concrete ways
+to use the modern tools already installed by this setup:
 
 ```zsh
-extract() {
-  case "$1" in
-    *.tar.gz|*.tgz) tar xzf "$1"   ;;
-    *.tar.bz2)      tar xjf "$1"   ;;
-    *.tar)          tar xf "$1"    ;;
-    *.gz)           gunzip "$1"    ;;
-    *.zip)          unzip "$1"     ;;
-    *)              echo "extract: unknown format '$1'" ;;
-  esac
-}
+coach                       # local deterministic analysis of 1,000 commands
+coach --limit 2500 --all    # deeper scan, every qualifying suggestion
+coach --llm                 # add an optional local LM Studio review
+coach --show-llm-prompt     # inspect the exact anonymized prompt, no model call
 ```
 
-## Ports & processes
+The rule engine processes command text locally and does not persist it. The
+optional LLM receives only aggregate command skeletons such as `git status ×18`:
+paths, arguments, values, URLs, headers, credentials, and raw history are never
+included. The first installed LM Studio LLM is selected automatically, or choose
+one explicitly with `--model MODEL`. Rule-based cards include a representative
+pattern, copy/paste examples, and when the familiar command is still the better
+choice; the LLM is asked to follow the same evidence/example/caveat structure.
+
+### Public dev tunnel (`devtunnel`)
+
+`devtunnel` puts a local dev server behind a **fixed** public HTTPS hostname
+using a Cloudflare *named* tunnel. This is the difference that matters: a quick
+tunnel (`cloudflared tunnel --url http://localhost:3000`) mints a new random
+`*.trycloudflare.com` URL on every start, which is useless for OAuth redirect
+URIs, webhook registrations, or a phone pinned to one address. A named tunnel is
+a persistent object with a CNAME you own, so the hostname survives restarts,
+reboots, and reinstalls.
+
+**Requires** a domain whose nameservers point at Cloudflare (free plan is fine);
+the fixed hostname is a record in that zone.
 
 ```zsh
-# list everything listening on a TCP port
-alias ports='lsof -iTCP -sTCP:LISTEN -nP'
-
-# killport <port>: kill whatever is bound to a port (e.g. killport 3000)
-killport() { lsof -ti tcp:"$1" | xargs kill -9; }
+devtunnel check dev.yourdomain.com  # is the zone on Cloudflare yet?
+devtunnel login                     # once per machine — browser auth
+devtunnel up dev.yourdomain.com 3000 # create tunnel + DNS route, then run it
+devtunnel run dev.yourdomain.com    # later runs: no DNS changes
+devtunnel ls                        # configured hostnames + targets
+devtunnel rm dev.yourdomain.com     # delete the tunnel
 ```
 
-## Global aliases (pipe helpers)
+#### Moving a domain registered elsewhere
 
-Global aliases expand anywhere on the line, so you can tack them onto any pipe:
+If the domain is at another registrar, only its **nameservers** move — the
+registration, and where you pay for it, stay put.
+
+1. Add the domain at <https://dash.cloudflare.com> (free plan). Cloudflare scans
+   the existing records and shows you two nameservers.
+2. At your registrar, replace the current nameservers with that pair.
+3. `devtunnel check dev.yourdomain.com` until it reports Cloudflare — usually
+   minutes, occasionally a few hours. `up` cannot route the hostname before then.
+
+`check` walks from the full hostname down to the delegation point, so it reports
+the real zone apex (`bbc.co.uk`, not `co.uk`) and tells you which nameservers are
+actually answering.
+
+#### Tailscale Funnel — a stable URL with no domain
+
+When the URL only has to be *stable*, not *yours*, skip DNS entirely:
 
 ```zsh
-alias -g G='| rg'      # ... G pattern    -> pipe into ripgrep
-alias -g L='| less'    # ... L            -> pipe into less
-alias -g H='| head'    # ... H            -> pipe into head
+devtunnel funnel 3000 --guard   # serve localhost:3000, shared secret required
+devtunnel funnel 3000           # same, but wide open — local experiments only
+devtunnel funnel 3000 --bg      # detach instead of holding the terminal
+devtunnel funnel url            # print just the URL — for CI secrets/config
+devtunnel funnel pin            # record the URL so doctor catches drift
+devtunnel token                 # print the shared secret
+devtunnel funnel status / off
 ```
 
-Example: `ll G config`, `cat file L`, `dmesg H`.
+The hostname is `<machine>.<tailnet>.ts.net`, derived from the machine and
+tailnet names, so it is stable until you rename one of them. HTTPS certificates
+are issued automatically.
 
-## fzf helpers
+**Funnel is public and unauthenticated** — this is what makes it reachable from
+GitHub-hosted CI runners, which are not on your tailnet. It is *not*
+`tailscale serve`, which is tailnet-only. Anyone with the URL can reach the port,
+so put your own auth in front of it: a shared-secret header, or signed webhook
+payloads. Funnel also only listens publicly on ports 443, 8443, and 10000, and
+Tailscale rate-limits it — it is for development traffic, not production.
+
+##### The shared-secret gate (`--guard`)
+
+Funnel has no authentication of its own, so `--guard` puts `bin/devtunnel-guard`
+(stdlib Python, no dependencies) in front of the dev server:
+
+```
+internet -> Funnel :443 -> guard :8099 -> your app :3000
+                            rejects anything without the token
+```
+
+The guard checks `X-Devtunnel-Token` in constant time, strips it before
+forwarding (your app never sees the secret), passes upstream status codes
+through unchanged, and returns 502 only when the app is genuinely unreachable.
+It binds `127.0.0.1`, so nothing but Funnel can reach it. The token lives in
+`~/.config/devtunnel/token` (mode 600) and is generated on first use; override it
+per-run with `DEVTUNNEL_TOKEN`, or move the guard's port with
+`DEVTUNNEL_GUARD_PORT`.
+
+##### From a GitHub Actions workflow
+
+```yaml
+- name: Call the dev machine
+  run: |
+    curl -sS --fail-with-body --max-time 30 \
+      -H "X-Devtunnel-Token: ${{ secrets.DEVTUNNEL_TOKEN }}" \
+      "${{ secrets.DEVTUNNEL_URL }}/health"
+```
+
+Set the two secrets from `devtunnel funnel url` and `devtunnel token`. The tunnel
+only answers while `devtunnel funnel` is running on the Mac and the machine is
+awake, so a job fails fast rather than hanging — the better failure mode, but it
+does make "start the tunnel" part of the dev loop.
+
+##### Keeping the URL from changing
+
+The URL is `<device>.<tailnet>.ts.net`. The tailnet half is stable; the device
+half is derived from the macOS hostname, and re-registering a machine while the
+old node still exists yields `<device>-1`. Either change breaks whatever CI has
+stored, silently.
 
 ```zsh
-# fcd: fuzzy-pick a subdirectory and cd into it
-fcd() { cd "$(find . -type d -not -path '*/.*' | fzf)"; }
+devtunnel funnel pin    # record today's URL
 ```
+
+`doctor.sh` then **fails** if the live URL no longer matches, and `devtunnel
+funnel url` warns on stderr while still printing the real URL on stdout. Also
+worth renaming the machine once in the Tailscale admin console — a name set there
+stops tracking the macOS hostname.
+
+#### Which backend?
+
+| | Cloudflare (`up`) | Tailscale (`funnel`) |
+|---|---|---|
+| Hostname | `dev.yourdomain.com` | `<machine>.<tailnet>.ts.net` |
+| Needs a domain | yes, zone on Cloudflare | no |
+| Setup | move nameservers once | log into the app |
+| Public ports | any | 443 / 8443 / 10000 |
+| Auth options | Cloudflare Access | `--guard` shared secret |
+
+`up` is idempotent — re-running reuses the existing tunnel and reasserts the DNS
+record (`--overwrite-dns`), so it is the only command you normally need. Targets
+accept a port (`3000`), a TLS port (`8443/https`, origin cert not verified since
+dev servers are self-signed), or a full URL (`http://127.0.0.1:5000`). Each
+hostname gets its own tunnel and a generated config at
+`~/.cloudflared/dev-<hostname>.yml`, so several projects can run side by side.
+
+Deleting a tunnel does not remove its CNAME — drop that in the Cloudflare
+dashboard (DNS → Records) if you want the name fully released. To keep a tunnel
+up in the background rather than in a foreground shell, use
+`cloudflared service install` (needs sudo, installs a launch daemon).
 
 ---
 

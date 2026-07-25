@@ -1,0 +1,672 @@
+#!/bin/zsh
+# shell-coach — turn recent shell habits into practical, local recommendations.
+#
+# The deterministic analyzer reads command text locally and never persists it.
+# Optional LM Studio analysis receives only command/subcommand frequency
+# skeletons; paths, arguments, values, headers, and raw history stay out of the
+# prompt even though inference itself is local.
+
+emulate -L zsh
+setopt EXTENDED_GLOB PIPE_FAIL
+zmodload zsh/regex
+
+readonly VERSION='0.2.0'
+
+main() {
+integer history_limit=1000
+integer top_limit=8
+integer use_llm=0
+integer show_llm_prompt=0
+integer no_color=0
+local history_file=''
+local read_stdin=0
+local model=''
+local source_label='Atuin'
+
+usage() {
+  print -r -- 'Usage: shell-coach [options]
+
+Analyze recent shell history and recommend faster, clearer installed tools.
+Raw history is processed locally and never written by shell-coach.
+
+Options:
+  --limit N             Analyze at most N recent commands (default: 1000)
+  --top N               Show the top N rule-based suggestions (default: 8)
+  --all                 Show every qualifying suggestion
+  --history-file FILE   Analyze one command per line instead of Atuin
+  --stdin               Read one command per line from standard input
+  --llm                 Add a privacy-preserving local LM Studio review
+  --show-llm-prompt     Print the exact anonymized prompt without calling LM Studio
+  --model MODEL         LM Studio model key (default: first installed LLM)
+  --no-color            Disable ANSI styling
+  -h, --help            Show this help
+  -v, --version         Show the version
+
+Examples:
+  shell-coach
+  shell-coach --limit 2500 --all
+  shell-coach --llm
+  shell-coach --llm --model google/gemma-4-e4b
+  shell-coach --history-file commands.txt'
+}
+
+die() {
+  print -u2 -r -- "shell-coach: $*"
+  return 1
+}
+
+while (( $# )); do
+  case "$1" in
+    --limit)
+      (( $# >= 2 )) || { die '--limit requires a value'; exit 2; }
+      history_limit="$2"
+      shift 2 ;;
+    --top)
+      (( $# >= 2 )) || { die '--top requires a value'; exit 2; }
+      top_limit="$2"
+      shift 2 ;;
+    --all)
+      top_limit=0
+      shift ;;
+    --history-file)
+      (( $# >= 2 )) || { die '--history-file requires a path'; exit 2; }
+      history_file="$2"
+      source_label="file ${2:t}"
+      shift 2 ;;
+    --stdin)
+      read_stdin=1
+      source_label='standard input'
+      shift ;;
+    --llm)
+      use_llm=1
+      shift ;;
+    --show-llm-prompt)
+      use_llm=1
+      show_llm_prompt=1
+      shift ;;
+    --model)
+      (( $# >= 2 )) || { die '--model requires a model key'; exit 2; }
+      model="$2"
+      shift 2 ;;
+    --no-color)
+      no_color=1
+      shift ;;
+    -h|--help)
+      usage
+      exit ;;
+    -v|--version)
+      print -r -- "shell-coach $VERSION"
+      exit ;;
+    --)
+      shift
+      break ;;
+    *)
+      die "unknown option: $1"
+      print -u2 -r -- 'Try: shell-coach --help'
+      exit 2 ;;
+  esac
+done
+
+[[ "$history_limit" == <-> ]] && (( history_limit > 0 )) || {
+  die '--limit must be a positive integer'
+  exit 2
+}
+[[ "$top_limit" == <-> ]] || {
+  die '--top must be a non-negative integer'
+  exit 2
+}
+(( read_stdin && ${#history_file} )) && {
+  die '--stdin and --history-file are mutually exclusive'
+  exit 2
+}
+
+typeset -a history_entries
+
+load_line_history() {
+  local input_file="$1" line
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -n "$line" ]] && history_entries+=("$line")
+  done < "$input_file"
+
+  if (( ${#history_entries} > history_limit )); then
+    history_entries=("${(@)history_entries[-history_limit,-1]}")
+  fi
+}
+
+if (( read_stdin )); then
+  load_line_history /dev/stdin
+elif [[ -n "$history_file" ]]; then
+  [[ -r "$history_file" ]] || { die "cannot read history file: $history_file"; exit 1; }
+  load_line_history "$history_file"
+else
+  (( $+commands[atuin] )) || {
+    die 'Atuin is not installed; use --history-file or --stdin'
+    exit 1
+  }
+  local raw_history
+  raw_history="$(atuin search --limit "$history_limit" --include-duplicates \
+    --cmd-only --print0 2>/dev/null)" || {
+      die 'Atuin could not read history'
+      exit 1
+    }
+  history_entries=("${(@0)raw_history}")
+  history_entries=("${(@)history_entries:#}")
+fi
+
+(( ${#history_entries} )) || {
+  die "no commands found in $source_label"
+  exit 1
+}
+
+# Rule catalog. Patterns are POSIX extended regular expressions evaluated
+# against a lower-cased, single-line copy of each command.
+typeset -a rule_ids
+typeset -A rule_min rule_tool rule_required rule_title rule_pattern rule_why rule_try rule_count
+typeset -A rule_seen rule_examples rule_keep
+
+add_rule() {
+  local id="$1"
+  rule_ids+=("$id")
+  rule_min[$id]="$2"
+  rule_tool[$id]="$3"
+  rule_required[$id]="$4"
+  rule_title[$id]="$5"
+  rule_pattern[$id]="$6"
+  rule_why[$id]="$7"
+  rule_try[$id]="$8"
+  rule_count[$id]=0
+}
+
+local boundary='(^|[;&|][;&|]?[[:space:]]*)(sudo[[:space:]]+)?'
+
+add_rule find 2 fd fd \
+  'Reach for fd instead of find' \
+  "${boundary}find([[:space:]]|$)" \
+  'fd has concise defaults, respects ignore files, and is much easier to compose interactively.' \
+  'fd PATTERN [PATH]'
+
+add_rule grep 2 rg rg \
+  'Use rg for interactive text search' \
+  "${boundary}grep([[:space:]]|$)" \
+  'ripgrep is fast, recursive by default, and ignore-aware. Keep grep for portable scripts and simple pipelines.' \
+  'rg PATTERN [PATH]'
+
+add_rule cat 3 bat bat \
+  'Use bat when reading files' \
+  '^[[:space:]]*(sudo[[:space:]]+)?cat[[:space:]]+[^|><]+$' \
+  'bat adds syntax highlighting, line numbers, Git context, and paging. Keep cat for pipes and byte-for-byte output.' \
+  'bat FILE'
+
+add_rule ls_long 2 ll managed \
+  'Use ll for detailed directory listings' \
+  "${boundary}ls[[:space:]]+-[^[:space:]]*l[^[:space:]]*a|${boundary}ls[[:space:]]+-[^[:space:]]*a[^[:space:]]*l" \
+  'll is already configured as an eza-powered long listing with icons and Git status.' \
+  'll'
+
+add_rule ls_views 3 ll managed \
+  'Pick the directory view that answers the question' \
+  '^[[:space:]]*(sudo[[:space:]]+)?ls[[:space:]]*$' \
+  'Plain ls already uses eza in this setup; the shortcuts expose more useful views without extra flags.' \
+  'll'
+
+add_rule disk_usage 2 dust dust \
+  'Use dust to understand disk usage' \
+  "${boundary}du([[:space:]]|$)" \
+  'dust gives a sorted visual breakdown without a pile of du/sort/head plumbing.' \
+  'dust [PATH]'
+
+add_rule disk_free 2 duf duf \
+  'Use duf for filesystem capacity' \
+  "${boundary}df([[:space:]]|$)" \
+  'duf presents mounted filesystems, usage, and types in a readable table.' \
+  'duf'
+
+add_rule processes 2 procs procs \
+  'Use procs for process inspection' \
+  "${boundary}ps[[:space:]]+(aux|ax|ef)([[:space:]]|$)" \
+  'procs adds a searchable, colored process tree with useful columns by default.' \
+  'procs [PATTERN]'
+
+add_rule top 2 btop btop \
+  'Use btop for interactive system monitoring' \
+  "${boundary}(top|htop)([[:space:]]|$)" \
+  'btop combines CPU, memory, disk, network, and process views in one responsive TUI.' \
+  'btop'
+
+add_rule sed 3 sd sd \
+  'Use sd for straightforward replacements' \
+  "${boundary}sed([[:space:]]|$)" \
+  'sd has readable regex syntax and fewer quoting traps. Keep sed for streams and complex programs.' \
+  "sd 'BEFORE' 'AFTER' FILE"
+
+add_rule http 2 xh xh \
+  'Use xh for interactive API calls' \
+  "${boundary}curl[[:space:]].*(localhost|127\\.0\\.0\\.1|/api/|--request|-x[[:space:]]|--header|-h[[:space:]])" \
+  'xh provides concise HTTPie-style syntax, JSON formatting, colors, and sensible defaults. Keep curl for downloads and scripts.' \
+  'xh METHOD URL key=value'
+
+add_rule dns 2 doggo doggo \
+  'Use doggo for DNS queries' \
+  "${boundary}(dig|nslookup)([[:space:]]|$)" \
+  'doggo produces readable, structured DNS output while retaining common query types and servers.' \
+  'doggo DOMAIN [TYPE]'
+
+add_rule ping 3 gping gping \
+  'Use gping when monitoring latency' \
+  "${boundary}ping([[:space:]]|$)" \
+  'gping graphs latency over time. Keep ping for scripts and one-shot reachability checks.' \
+  'gping HOST'
+
+add_rule trace 2 trip trip \
+  'Use trip for network path diagnostics' \
+  "${boundary}(traceroute|mtr)([[:space:]]|$)" \
+  'trip combines traceroute and continuous latency/loss analysis in a polished TUI.' \
+  'trip HOST'
+
+add_rule watch 2 watchexec watchexec \
+  'Use watchexec for file-driven reruns' \
+  "${boundary}watch([[:space:]]|$)" \
+  'watchexec reruns when files change instead of polling on a timer. Keep watch for genuinely periodic status commands.' \
+  'watchexec -- COMMAND'
+
+add_rule make_loop 5 watchexec watchexec \
+  'Turn repeated builds into a feedback loop' \
+  "${boundary}make([[:space:]]|$)" \
+  'When you are rerunning the same target while editing, watchexec can trigger it only after files change.' \
+  'watchexec -- make TARGET'
+
+add_rule manual 3 tldr tldr \
+  'Try tldr when you need examples quickly' \
+  "${boundary}man([[:space:]]|$)" \
+  'tldr gives concise, task-oriented examples; man remains the authoritative full reference.' \
+  'tldr COMMAND'
+
+add_rule git_tui 5 lazygit lazygit \
+  'Use lg for exploratory Git work' \
+  "${boundary}git[[:space:]]+(status|log|diff|branch|stash)([[:space:]]|$)" \
+  'lazygit is excellent when a task spans status, diffs, branches, commits, and stashes. Keep Git commands for precise automation.' \
+  'lg'
+
+add_rule docker_tui 5 lazydocker lazydocker \
+  'Use lazydocker for interactive container work' \
+  "${boundary}docker[[:space:]]+(ps|logs|stats|inspect)([[:space:]]|$)" \
+  'lazydocker'
+
+add_rule agent_sessions 8 tmux tmux \
+  'Protect long AI sessions with tmux' \
+  "${boundary}(codex|claude)([[:space:]]|$)" \
+  'For agent runs that matter, a named tmux session survives closed tabs and makes detaching and returning deliberate.' \
+  'tmux new -As work'
+
+add_rule history_search 1 Ctrl-R managed \
+  'Use Atuin instead of piping history' \
+  "${boundary}(history|fc[[:space:]]+-l)[^;&|]*[|][[:space:]]*(grep|rg)([[:space:]]|$)" \
+  'Atuin search understands frequency, recency, directories, sessions, exit status, and fuzzy matching.' \
+  'Press Ctrl+R'
+
+add_rule mkcd 1 mkcd managed \
+  'Use mkcd to create and enter a directory' \
+  "${boundary}mkdir[[:space:]][^;&|]+([&][&]|;)[[:space:]]*(cd|builtin[[:space:]]+cd)([[:space:]]|$)" \
+  'The managed mkcd function validates its argument and performs both operations safely.' \
+  'mkcd DIRECTORY'
+
+add_rule killport 1 killport managed \
+  'Use killport for local listeners' \
+  "${boundary}kill[^;&|]*lsof[^;&|]*-[^[:space:]]*i" \
+  'killport validates the port and sends TERM by default; --force is available when graceful shutdown fails.' \
+  'killport PORT'
+
+add_rule extract 2 extract managed \
+  'Use extract for common archives' \
+  "${boundary}(unzip|tar[[:space:]]+-[^[:space:]]*x)([[:space:]]|$)" \
+  'The managed extract function validates the file and handles common tar, gzip, bzip2, xz, and zip formats.' \
+  'extract ARCHIVE'
+
+add_rule climb 2 bd managed \
+  'Use bd for multi-level ancestor jumps' \
+  "${boundary}(cd|builtin[[:space:]]+cd)[[:space:]]+((\\.\\.)/){2,}" \
+  'bd names the destination instead of encoding the current depth, which is easier to read and survives directory changes.' \
+  'bd ANCESTOR'
+
+# Each card uses generic, copy/paste-safe examples. They illustrate the habit
+# without echoing paths, arguments, URLs, or other potentially sensitive history.
+set_card() {
+  local id="$1"
+  rule_seen[$id]="$2"
+  rule_examples[$id]="$3"
+  rule_keep[$id]="$4"
+}
+
+set_card find 'find . -name "*.go"' $'fd -e go                 # every Go file\nfd handler src          # names matching handler under src' \
+  'Keep find for portable scripts and complex predicates.'
+set_card grep 'grep -R TODO .' $'rg TODO                   # recursive and ignore-aware\nrg -n "func main" src   # include line numbers' \
+  'Keep grep for portable scripts and small pipelines.'
+set_card cat 'cat README.md' $'bat README.md              # highlighted, paged view\nbat -r 40:80 main.go      # inspect a line range' \
+  'Keep cat for pipes and exact, unformatted output.'
+set_card ls_long 'ls -la' $'ll                         # details, hidden files, Git state\nlt                         # compact two-level tree' \
+  'Use plain ls for the quickest uncluttered glance.'
+set_card ls_views 'ls' $'ll                         # details, hidden files, Git state\nlt                         # compact two-level tree\nCtrl+T                     # fuzzy-pick a file into your command' \
+  'Plain ls is still ideal for a quick glance.'
+set_card disk_usage 'du -sh * | sort -h' $'dust                       # current directory\ndust ~/Downloads           # inspect one subtree' \
+  'Keep du for portable scripts or exact machine-readable output.'
+set_card disk_free 'df -h' $'duf                        # readable filesystem overview\nduf /                      # focus on the filesystem for a path' \
+  'Keep df for portable scripts.'
+set_card processes 'ps aux | grep NAME' $'procs NAME                 # filter by name\nprocs --tree               # see parent/child relationships' \
+  'Keep ps for scripts and exact field selection.'
+set_card top 'top' $'btop                       # CPU, memory, disk, network, processes' \
+  'Keep top for remote or minimal machines where btop is unavailable.'
+set_card sed "sed 's/old/new/g' FILE" $"sd 'old' 'new' FILE       # readable replacement\nsd 'v([0-9]+)' 'version \$1' FILE" \
+  'Keep sed for stream transforms and complex programs.'
+set_card http 'curl -X POST URL -H …' $'xh POST :3000/api name=antoine\nxh GET :3000/health' \
+  'Keep curl for downloads, portable scripts, and exact protocol control.'
+set_card dns 'dig example.com' $'doggo example.com          # common records\ndoggo example.com MX       # choose a record type' \
+  'Keep dig when following documentation written specifically for it.'
+set_card ping 'ping example.com' $'gping example.com         # graph latency over time' \
+  'Keep ping for one-shot checks and scripts.'
+set_card trace 'traceroute example.com' $'trip example.com          # hops, latency, and packet loss' \
+  'Keep traceroute for a quick, universally available trace.'
+set_card watch 'watch COMMAND' $'watchexec -- COMMAND       # rerun after any file change\nwatchexec -e go -- make test # watch only Go files' \
+  'Keep watch for time-based status polling.'
+set_card make_loop 'make TARGET … edit … make TARGET' $'watchexec -- make test   # rerun tests after edits\nwatchexec -r -- make run  # restart a long-running target' \
+  'Use make by itself for one-shot builds and CI.'
+set_card manual 'man tar' $'tldr tar                   # task-oriented examples\nman tar                    # complete authoritative reference' \
+  'Use man when you need every flag or exact semantics.'
+set_card git_tui 'git status / diff / log …' $'lg                         # explore status, diffs, branches, stashes\ngit status --short         # precise, scriptable answer' \
+  'Keep individual Git commands for focused operations and automation.'
+set_card docker_tui 'docker ps / logs / stats …' $'lazydocker                 # browse containers, logs, and stats together\ndocker logs -f NAME        # focused, scriptable stream' \
+  'Keep Docker commands for precise operations and automation.'
+set_card agent_sessions 'codex / claude' $'tmux new -As mind          # create or reattach a named session\nCtrl+B, then D              # detach without stopping it\ntmux attach -t mind         # return later\ncaffeinate -i codex         # prevent idle sleep for one run' \
+  'Run the agent directly for quick sessions; tmux is most useful for work you cannot afford to lose.'
+set_card history_search 'history | grep PATTERN' $'Ctrl+R                     # search with Atuin\natuin search PATTERN        # explicit CLI search' \
+  'Use history/fc when writing portable shell logic.'
+set_card mkcd 'mkdir NAME && cd NAME' $'mkcd NAME                  # create and enter safely' \
+  'Keep mkdir when you do not want to enter the new directory.'
+set_card killport 'lsof … | kill …' $'killport 3000               # graceful TERM\nkillport --force 3000       # SIGKILL only when necessary' \
+  'Use the manual tools when you need to inspect or select individual processes.'
+set_card extract 'tar -xf ARCHIVE / unzip ARCHIVE' $'extract archive.tar.zst    # detect the format and unpack\nextract bundle.zip' \
+  'Keep tar/unzip when you need format-specific options.'
+set_card climb 'cd ../../..' $'bd mind                    # jump to the nearest ancestor named mind\n-                          # return to the previous directory' \
+  'Use .. for one parent and - (cd -) for the previous directory.'
+
+tool_available() {
+  local requirement="$1"
+  [[ "$requirement" == managed ]] && return 0
+  (( $+commands[$requirement] ))
+}
+
+typeset -A cd_count skeleton_count
+local command flat haystack id target skeleton entry llm_title llm_try example_line
+integer rank=0 count=0
+
+# Produce an argument-free command skeleton for the optional LLM. Only a fixed
+# allowlist of well-known subcommands is retained; all other arguments vanish.
+safe_skeleton() {
+  emulate -L zsh
+  setopt EXTENDED_GLOB
+  local input="${1//$'\n'/ }"
+  local -a tokens
+  tokens=(${(z)input})
+  (( ${#tokens} )) || return
+
+  integer index=1
+  local prefix='' token base second=''
+  while (( index <= ${#tokens} )); do
+    token="${(Q)tokens[index]}"
+    if [[ "$token" == [A-Za-z_][A-Za-z0-9_]#=* ]]; then
+      (( index++ ))
+      continue
+    fi
+    if [[ "$token" == sudo || "$token" == command || "$token" == env ]]; then
+      prefix+="$token "
+      (( index++ ))
+      continue
+    fi
+    break
+  done
+  (( index <= ${#tokens} )) || return
+
+  base="${${(Q)tokens[index]}:t}"
+  [[ "$base" == [A-Za-z0-9_.+-]## ]] || return
+  case "$base" in
+    cd|echo|printf|pwd|source|alias|history|fc|ll|lt|lg|bd|fcd|mkcd|killport|extract|y|z|zi|reload) ;;
+    *) (( $+commands[$base] )) || return ;;
+  esac
+  (( index++ ))
+  if (( index <= ${#tokens} )); then
+    token="${(Q)tokens[index]}"
+    case "$base" in
+      git)
+        [[ "$token" =~ '^(add|bisect|branch|checkout|cherry-pick|clean|clone|commit|diff|fetch|init|log|merge|pull|push|rebase|remote|reset|restore|revert|show|stash|status|switch|tag|worktree)$' ]] && second="$token" ;;
+      docker)
+        [[ "$token" =~ '^(build|compose|exec|images|inspect|logs|ps|pull|push|run|stats|stop|system|volume)$' ]] && second="$token" ;;
+      brew)
+        [[ "$token" =~ '^(bundle|cleanup|doctor|info|install|list|outdated|search|services|tap|uninstall|update|upgrade)$' ]] && second="$token" ;;
+      cargo)
+        [[ "$token" =~ '^(add|bench|build|check|clippy|fmt|install|nextest|run|test|update)$' ]] && second="$token" ;;
+      go)
+        [[ "$token" =~ '^(build|clean|env|fmt|get|install|list|mod|run|test|tool|vet|work)$' ]] && second="$token" ;;
+      mise)
+        [[ "$token" =~ '^(activate|doctor|exec|install|ls|outdated|run|tasks|uninstall|update|upgrade|use)$' ]] && second="$token" ;;
+      gh)
+        [[ "$token" =~ '^(api|auth|browse|dash|issue|pr|release|repo|run|search|workflow)$' ]] && second="$token" ;;
+      codefly)
+        [[ "$token" =~ '^(add|agent|generate|run)$' ]] && second="$token" ;;
+      mind)
+        [[ "$token" =~ '^(doctor|ingest|search|stats)$' ]] && second="$token" ;;
+    esac
+  fi
+
+  print -r -- "${prefix}${base}${second:+ $second}"
+}
+
+for command in "${history_entries[@]}"; do
+  flat="${command//$'\n'/ }"
+  haystack="${flat:l}"
+  for id in "${rule_ids[@]}"; do
+    tool_available "${rule_required[$id]}" || continue
+    if [[ "$haystack" =~ ${rule_pattern[$id]} ]]; then
+      (( rule_count[$id]++ ))
+    fi
+  done
+
+  # Repeated exact directory destinations are a strong signal that zoxide can
+  # replace memorized paths. Exclude relative navigation and expansions.
+  if [[ "$flat" =~ '^[[:space:]]*(builtin[[:space:]]+)?cd[[:space:]]+(--[[:space:]]+)?([^;&|]+)[[:space:]]*$' ]]; then
+    target="${match[3]}"
+    target="${target##[[:space:]]#}"
+    target="${target%%[[:space:]]#}"
+    if [[ -n "$target" && "$target" != '.' && "$target" != '..' && "$target" != '-' \
+          && "$target" != *'$'* && "$target" != *'`'* ]]; then
+      (( cd_count[$target]++ ))
+    fi
+  fi
+
+  skeleton="$(safe_skeleton "$flat")"
+  [[ -n "$skeleton" ]] && (( skeleton_count[$skeleton]++ ))
+done
+
+# Add the strongest repeated-directory opportunity without exposing its full path.
+local best_cd=''
+integer best_cd_count=0
+for target in ${(k)cd_count}; do
+  if (( cd_count[$target] > best_cd_count )); then
+    best_cd="$target"
+    best_cd_count=${cd_count[$target]}
+  fi
+done
+if (( best_cd_count >= 3 )) && tool_available zoxide; then
+  local destination="${best_cd:t}"
+  if [[ ("${destination[1]}" == '"' && "${destination[-1]}" == '"') \
+        || ("${destination[1]}" == "'" && "${destination[-1]}" == "'") ]]; then
+    destination="${destination[2,-2]}"
+  fi
+  rule_ids+=(repeat_cd)
+  rule_min[repeat_cd]=3
+  rule_tool[repeat_cd]=z
+  rule_required[repeat_cd]=zoxide
+  rule_title[repeat_cd]="Let zoxide remember ${destination:-that directory}"
+  rule_why[repeat_cd]='Repeated exact cd destinations are what zoxide learns best; use zi when you want an interactive picker.'
+  rule_try[repeat_cd]="z ${destination:-NAME}"
+  rule_seen[repeat_cd]="cd …/${destination:-NAME}"
+  rule_examples[repeat_cd]="z ${destination:-NAME}  # jump there from anywhere"$'\n''zi      # fuzzy-pick any learned directory'
+  rule_keep[repeat_cd]='Use - (cd -) for the previous directory and .. for one parent.'
+  rule_count[repeat_cd]=$best_cd_count
+fi
+
+typeset -a ranked
+ranked=("${(@f)$(
+  for id in "${rule_ids[@]}"; do
+    (( rule_count[$id] >= rule_min[$id] )) &&
+      print -r -- "${rule_count[$id]}"$'\t'"$id"
+  done | LC_ALL=C sort -t $'\t' -k1,1nr -k2,2
+)}")
+ranked=("${(@)ranked:#}")
+
+local bold='' dim='' cyan='' green='' yellow='' reset=''
+if (( ! no_color )) && [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
+  bold=$'\e[1m'
+  dim=$'\e[2m'
+  cyan=$'\e[36m'
+  green=$'\e[32m'
+  yellow=$'\e[33m'
+  reset=$'\e[0m'
+fi
+
+print -r -- "${bold}${cyan}Shell Coach${reset}"
+print -r -- "${dim}Analyzed ${#history_entries} recent commands from $source_label · raw history stayed local${reset}"
+print
+
+integer available=${#ranked}
+integer shown=$available
+(( top_limit > 0 && shown > top_limit )) && shown=$top_limit
+
+if (( ! available )); then
+  print -r -- "${green}No repeated rule-based opportunities found. Your recent shell habits already look sharp.${reset}"
+else
+  for (( rank = 1; rank <= shown; rank++ )); do
+    entry="${ranked[$rank]}"
+    count="${entry%%$'\t'*}"
+    id="${entry#*$'\t'}"
+    print -r -- "${bold}${rank}. ${rule_title[$id]}${reset} ${yellow}· ${count}× observed${reset}"
+    [[ -n "${rule_seen[$id]:-}" ]] && print -r -- "   ${dim}Pattern:${reset} ${rule_seen[$id]}"
+    print -r -- "   ${rule_why[$id]}"
+    print -r -- "   ${green}Try:${reset}"
+    if [[ -n "${rule_examples[$id]:-}" ]]; then
+      for example_line in "${(@f)rule_examples[$id]}"; do
+        print -r -- "     $example_line"
+      done
+    else
+      print -r -- "     ${rule_try[$id]}"
+    fi
+    [[ -n "${rule_keep[$id]:-}" ]] && print -r -- "   ${dim}Keep:${reset} ${rule_keep[$id]}"
+    print
+  done
+  if (( shown < available )); then
+    print -r -- "${dim}$(( available - shown )) more suggestions available; run shell-coach --all.${reset}"
+  fi
+fi
+
+if (( ! use_llm )); then
+  print -r -- "${dim}Optional: shell-coach --llm adds a local, anonymized LM Studio review.${reset}"
+  exit
+fi
+
+typeset -a skeletons
+skeletons=("${(@f)$(
+  for skeleton in ${(k)skeleton_count}; do
+    print -r -- "${skeleton_count[$skeleton]}"$'\t'"$skeleton"
+  done | LC_ALL=C sort -t $'\t' -k1,1nr -k2,2 | head -n 40
+)}")
+
+local frequency_summary=''
+for entry in "${skeletons[@]}"; do
+  [[ -n "$entry" ]] && frequency_summary+="- ${entry%%$'\t'*}x ${entry#*$'\t'}"$'\n'
+done
+
+local rule_summary=''
+integer summary_limit=$shown
+(( summary_limit > 10 )) && summary_limit=10
+for (( rank = 1; rank <= summary_limit; rank++ )); do
+  entry="${ranked[$rank]}"
+  id="${entry#*$'\t'}"
+  llm_title="${rule_title[$id]}"
+  llm_try="${rule_try[$id]}"
+  [[ "$id" == repeat_cd ]] && llm_title='Use zoxide for repeated directory jumps'
+  [[ "$id" == repeat_cd ]] && llm_try='z NAME; zi'
+  rule_summary+="- ${llm_title} (${entry%%$'\t'*} matches); safe example: ${llm_try}"$'\n'
+done
+[[ -n "$rule_summary" ]] || rule_summary='- No deterministic rule crossed its repetition threshold.'
+
+local prompt="Recent anonymized shell command skeleton frequencies:
+$frequency_summary
+Deterministic local analyzer findings:
+$rule_summary
+Environment facts:
+- ls already invokes eza; do not recommend replacing ls with eza.
+- ll is a detailed eza view; lt is a two-level tree.
+- tmux can preserve long-running sessions; caffeinate can prevent idle sleep.
+
+Installed/managed alternatives you may recommend:
+fd, rg, bat, eza/ll, dust, duf, procs, btop, sd, xh, doggo, gping, trip,
+watchexec, tldr, lazygit (invoked as lg), lazydocker, Atuin, zoxide, bd, fcd, mkcd,
+killport, extract, Yazi, mise, direnv, sccache, tmux, caffeinate.
+
+Give at most three high-leverage coaching suggestions. Be concise and practical.
+Every suggestion must cite a listed frequency or analyzer finding; omit ideas
+that have no direct evidence in the supplied aggregates.
+Distinguish interactive convenience from portable scripting: do not recommend
+blindly replacing grep, cat, curl, sed, ping, or Git in scripts. Do not invent
+commands or infer hidden arguments, projects, credentials, paths, or identities.
+Do not merely say “use X instead of Y.” For each suggestion, use this format:
+
+1. **Short habit name** — Evidence: COMMAND N×
+   Try: \`one copy/paste-safe command\`
+   Why: one concrete benefit
+   Keep the original when: one short caveat"
+
+if (( show_llm_prompt )); then
+  print
+  print -r -- "${bold}${cyan}Exact anonymized LM Studio prompt${reset}"
+  print -r -- "$prompt"
+  exit
+fi
+
+(( $+commands[lms] )) || { die 'LM Studio CLI (lms) is not installed'; exit 1; }
+(( $+commands[jq] )) || { die 'jq is required to discover installed LM Studio models'; exit 1; }
+
+if [[ -z "$model" ]]; then
+  model="$(lms ls --llm --json 2>/dev/null | jq -r '.[0].modelKey // empty')"
+fi
+[[ -n "$model" ]] || {
+  die 'no local LM Studio LLM found; install one or pass --model MODEL'
+  exit 1
+}
+
+print
+print -r -- "${bold}${cyan}Local LLM review${reset} ${dim}· $model${reset}"
+print -r -- "${dim}Only command names, allowlisted subcommands, and counts are included in the prompt.${reset}"
+print -r -- "${dim}Thinking locally… loading the model can take a few seconds.${reset}"
+print
+
+local llm_response
+integer llm_started=$SECONDS
+llm_response="$(lms chat "$model" \
+  --system-prompt 'You are a precise shell productivity coach. Output only final recommendations, never analysis or reasoning. Follow the privacy and scope constraints in the user prompt. The command lg launches lazygit.' \
+  --prompt "$prompt" \
+  --reasoning off \
+  --ttl 60 \
+  --dont-fetch-catalog \
+  --yes)" || {
+    die 'local LM Studio inference failed'
+    exit 1
+  }
+
+# Some model templates serialize hidden reasoning into ordinary response text
+# even when reasoning is disabled. Keep only content after the last marker.
+[[ "$llm_response" == *'</think>'* ]] && llm_response="${llm_response##*</think>}"
+llm_response="${llm_response##[[:space:]]#}"
+print -r -- "${dim}Ready in $(( SECONDS - llm_started ))s.${reset}"
+print -r -- "$llm_response"
+}
+
+main "$@"

@@ -14,6 +14,8 @@ background-blur-radius = 20
 window-padding-x = 10
 window-padding-y = 10
 macos-titlebar-style = "tabs"
+# Reopen windows, tabs, splits, and working directories after quitting or rebooting.
+window-save-state = always
 cursor-style = "bar"
 mouse-hide-while-typing = true
 
