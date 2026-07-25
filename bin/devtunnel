@@ -335,7 +335,10 @@ cmd_funnel() {
         info "https://$host  ->  http://localhost:$sub"
         warn 'Funnel is PUBLIC and unauthenticated — anyone with the URL can reach this port'
         warn 'add the shared-secret gate with: devtunnel funnel '"$sub"' --guard'
-        exec "$ts" funnel "${ts_flags[@]}" "$sub"
+        # "localhost:PORT", not a bare port: tailscale turns a bare port into the
+        # IPv4 literal 127.0.0.1, which cannot reach a server bound to [::1] only
+        # — a very common default. The name lets it try both families.
+        exec "$ts" funnel "${ts_flags[@]}" "localhost:$sub"
       fi
 
       # Guarded: Funnel points at the gate, the gate forwards only authenticated

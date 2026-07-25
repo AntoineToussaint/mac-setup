@@ -188,7 +188,10 @@ url="$("$TUNNEL" funnel url 2>/dev/null)"
 
 : > "$STUB_LOG"
 "$TUNNEL" funnel 3000 >/dev/null 2>&1
-[[ "$(<"$STUB_LOG")" == *'tailscale funnel 3000'* ]] || fail 'funnel did not serve the port'
+# Must be "localhost:3000", never a bare "3000": tailscale expands a bare port to
+# the IPv4 literal, which cannot reach a dev server bound to [::1] only.
+[[ "$(<"$STUB_LOG")" == *'tailscale funnel localhost:3000'* ]] \
+  || fail "funnel did not target localhost:3000 — got: $(<"$STUB_LOG")"
 
 for bad_port in 0 70000 nonsense; do
   if "$TUNNEL" funnel "$bad_port" >/dev/null 2>&1; then
