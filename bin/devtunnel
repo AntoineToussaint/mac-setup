@@ -300,6 +300,13 @@ cmd_funnel() {
       ;;
     off)
       "$ts" funnel --https=443 off && info 'funnel stopped (the hostname stays yours)'
+      # A detached guard outlives the shell that started it, so stop it here too
+      # rather than leaving an orphan holding the port.
+      if [[ -s "$STATE_DIR/guard.pid" ]]; then
+        local pid; pid="$(<"$STATE_DIR/guard.pid")"
+        if kill "$pid" 2>/dev/null; then info "stopped the guard (pid $pid)"; fi
+        command rm -f -- "$STATE_DIR/guard.pid"
+      fi
       ;;
     '')
       die 'usage: devtunnel funnel <local-port> [--guard] [--bg] | url | pin | status | off'
@@ -340,9 +347,22 @@ cmd_funnel() {
       local token
       token="$(ensure_token)" || return 1
 
-      DEVTUNNEL_TOKEN="$token" "$GUARD_BIN" --listen "$GUARD_PORT" --upstream "$sub" &
-      local guard_pid=$!
-      trap 'kill '"$guard_pid"' 2>/dev/null' EXIT INT TERM
+      local guard_pid
+      if (( ${ts_flags[(I)--bg]} )); then
+        # Detached: tailscale returns immediately, so an EXIT trap would kill the
+        # gate the instant this shell ends and leave Funnel pointing at a dead
+        # port. Outlive the shell instead, and record the pid for `funnel off`.
+        mkdir -p "$STATE_DIR"
+        DEVTUNNEL_TOKEN="$token" nohup "$GUARD_BIN" \
+          --listen "$GUARD_PORT" --upstream "$sub" >/dev/null 2>&1 &
+        guard_pid=$!
+        print -r -- "$guard_pid" > "$STATE_DIR/guard.pid"
+        disown 2>/dev/null || true
+      else
+        DEVTUNNEL_TOKEN="$token" "$GUARD_BIN" --listen "$GUARD_PORT" --upstream "$sub" &
+        guard_pid=$!
+        trap 'kill '"$guard_pid"' 2>/dev/null' EXIT INT TERM
+      fi
 
       # Wait for the gate to accept connections before exposing it publicly.
       integer waited=0
