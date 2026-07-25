@@ -127,6 +127,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--listen", type=int, required=True, help="port to accept Funnel traffic on")
     parser.add_argument("--upstream", type=int, required=True, help="port the real dev server listens on")
+    parser.add_argument(
+        "--upstream-host",
+        default="localhost",
+        help="host the dev server is on (default: localhost, which resolves to "
+        "whichever loopback family the server actually bound)",
+    )
     parser.add_argument("--verbose", action="store_true", help="log every allow/deny to stderr")
     args = parser.parse_args()
 
@@ -139,7 +145,11 @@ def main() -> int:
         return 2
 
     GuardHandler.token = token
-    GuardHandler.upstream = "http://127.0.0.1:%d" % args.upstream
+    # By name, not 127.0.0.1: plenty of dev servers bind IPv6 loopback only
+    # ([::1]), and a hard-coded IPv4 address cannot reach those at all.
+    # socket.create_connection walks every getaddrinfo result, so a name works
+    # whichever family the server chose.
+    GuardHandler.upstream = "http://%s:%d" % (args.upstream_host, args.upstream)
     GuardHandler.verbose = args.verbose
 
     # 127.0.0.1, never 0.0.0.0: only Funnel should be able to reach this port.

@@ -292,4 +292,36 @@ code() { curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$@"; }
 [[ "$(code -H 'X-Devtunnel-Token: t0ken' "http://127.0.0.1:$GUARD_PORT/missing")" == 404 ]] \
   || fail 'guard did not pass through the upstream status'
 
+# --- guard must reach an IPv6-loopback-only upstream --------------------------
+# Many dev servers bind [::1] and nothing on 127.0.0.1. A guard that dials the
+# IPv4 literal cannot reach them at all, so this is a real-world regression.
+V6_PORT="$(free_port)" || fail 'could not find a free port'
+V6_GUARD="$(free_port)" || fail 'could not find a free port'
+python3 -c "
+import http.server, socketserver
+class S(socketserver.TCPServer):
+    address_family = __import__('socket').AF_INET6
+class H(http.server.BaseHTTPRequestHandler):
+    protocol_version = 'HTTP/1.1'
+    def do_GET(self):
+        b = b'v6-ok'
+        self.send_response(200); self.send_header('Content-Length', str(len(b)))
+        self.end_headers(); self.wfile.write(b)
+    def log_message(self, *a): pass
+S(('::1', $V6_PORT), H).serve_forever()
+" >/dev/null 2>&1 &
+KILL_PIDS+=($!)
+DEVTUNNEL_TOKEN=t0ken "$GUARD" --listen "$V6_GUARD" --upstream "$V6_PORT" >/dev/null 2>&1 &
+KILL_PIDS+=($!)
+
+ready=0
+for _ in {1..40}; do
+  if curl -s -o /dev/null --max-time 1 "http://127.0.0.1:$V6_GUARD/" 2>/dev/null; then ready=1; break; fi
+  sleep 0.25
+done
+(( ready )) || fail 'guard did not come up in front of the IPv6-only upstream'
+v6_body="$(curl -s --max-time 5 -H 'X-Devtunnel-Token: t0ken' "http://127.0.0.1:$V6_GUARD/")"
+[[ "$v6_body" == 'v6-ok' ]] \
+  || fail "guard could not reach an IPv6-only upstream (got '$v6_body')"
+
 print -- 'devtunnel tests passed'
