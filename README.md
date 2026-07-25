@@ -248,10 +248,35 @@ dev servers are self-signed), or a full URL (`http://127.0.0.1:5000`). Each
 hostname gets its own tunnel and a generated config at
 `~/.cloudflared/dev-<hostname>.yml`, so several projects can run side by side.
 
-Deleting a tunnel does not remove its CNAME — drop that in the Cloudflare
-dashboard (DNS → Records) if you want the name fully released. To keep a tunnel
-up in the background rather than in a foreground shell, use
-`cloudflared service install` (needs sudo, installs a launch daemon).
+Deleting a tunnel does not remove its CNAME — `cloudflared` can create DNS
+records but never delete them, so drop it in the Cloudflare dashboard (DNS →
+Records) or with `flarectl` and a Zone:DNS:Edit API token. A tunnel whose CNAME
+outlives it answers 530 (error 1033) rather than NXDOMAIN.
+
+##### Surviving reboots
+
+`cloudflared service install` (no sudo — it installs a *user* launch agent,
+which runs whenever you are logged in) is the right idea, but on macOS it
+generates a plist whose `ProgramArguments` is the bare binary with **no
+arguments**. Bare `cloudflared` just prints "use `cloudflared tunnel run`" and
+exits, and `KeepAlive` restarts it forever. Point the agent at a real command:
+
+```xml
+<key>ProgramArguments</key>
+<array>
+  <string>/opt/homebrew/bin/cloudflared</string>
+  <string>--config</string><string>/Users/you/.cloudflared/config.yml</string>
+  <string>--no-autoupdate</string>
+  <string>tunnel</string><string>run</string>
+</array>
+```
+
+`~/.cloudflared/config.yml` can be a symlink to the per-hostname config
+`devtunnel up` generates. Reload with `launchctl bootout gui/$(id -u)/…` then
+`launchctl bootstrap gui/$(id -u) <plist>`.
+
+The tunnel surviving a reboot is only half of it — the service it points at has
+to come back too, or the hostname resolves, terminates TLS, and returns 502.
 
 ---
 
