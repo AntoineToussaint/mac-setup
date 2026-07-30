@@ -41,6 +41,7 @@ brew "xh"           # httpie-style HTTP client (Rust) — REST from the terminal
 brew "doggo"        # dig replacement — modern DNS client
 brew "trippy"       # mtr/traceroute replacement (binary: trip)
 brew "gping"        # ping with a live graph
+brew "asciinema"    # record/share terminal sessions (asciinema rec demo.cast)
 
 # ---------- Git ----------
 brew "git"
