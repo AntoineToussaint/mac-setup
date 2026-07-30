@@ -88,9 +88,20 @@ brew "delve"          # debugger (dlv) — understands goroutines/runtime
 # JS / TypeScript / Next.js
 brew "biome"          # Rust linter + formatter (ESLint + Prettier replacement)
 
-# ---------- Apps ----------
+# ---------- IDEs & editors ----------
+# Daily drivers:
 cask "gram"          # Zed fork without AI/telemetry
 cask "cursor"        # AI-first code editor (VS Code fork)
+# Compatibility targets — not daily drivers, installed to test tooling/extensions
+# against what most devs actually run:
+cask "visual-studio-code"  # VS Code — the baseline editor; test extensions/configs against stock
+cask "zed"                 # upstream Zed — gram is a fork, so test against the real thing
+cask "jetbrains-toolbox"   # installs/manages IntelliJ, PyCharm, GoLand, RustRover, WebStorm…
+cask "sublime-text"        # still common enough to be worth a smoke test (subl CLI)
+# Windsurf's cask was renamed "devin-desktop" after the Cognition acquisition — add if needed.
+# Xcode is App Store-only (or the `xcodes` cask) — not brewed here.
+
+# ---------- Apps ----------
 cask "raycast"       # launcher / Spotlight replacement (free)
 # Window management via Setapp (Swish / Rectangle Pro / Mosaic) instead of the free Rectangle cask
 cask "setapp"        # your Setapp subscription manager
@@ -124,7 +135,8 @@ brew "buf"          # protobuf lint / generate / breaking-change detection
 # Claude Code (CLI) is NOT installed via brew — it ships its own self-updating
 # native installer (curl -fsSL https://claude.ai/install.sh | bash), living in
 # ~/.local/share/claude. A brew formula would fight its auto-updater. Don't add it.
-# cask "claude"     # Claude *Desktop* GUI (community cask) — optional; enable if you want it
+cask "claude"       # Claude *Desktop* GUI (community cask)
+cask "conductor"    # Conductor — run several Claude Code agents in parallel, one git worktree each
 cask "chatgpt"      # ChatGPT desktop — NOTE: 566MB from a flaky CDN (persistent.oaistatic.com);
                     # if `brew bundle` fails here with curl(56), just re-run — it resumes.
 cask "codex"        # OpenAI Codex CLI (official cask). No silent auto-update, but

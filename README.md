@@ -292,6 +292,9 @@ Wired into `Brewfile` / `setup.sh` so a fresh machine is reproducible.
 | **JS/Next** | `biome`, `pnpm`, `bun` | Next 16 = Turbopack + TS by default; `biome` replaces ESLint+Prettier on new projects. |
 
 Editors: `gram` (Zed fork), `cursor` (AI-first VS Code fork), `neovim`.
+Compat-testing IDEs (installed, not daily drivers): `visual-studio-code`,
+`zed` (upstream), `jetbrains-toolbox` (IntelliJ/PyCharm/GoLand/…), `sublime-text`.
+Agent orchestration: `conductor` (parallel Claude Code agents in git worktrees).
 
 ## Sources
 
