@@ -81,9 +81,17 @@ fi
 eval "$(/opt/homebrew/bin/brew shellenv)"
 
 # 3) Get the repo -------------------------------------------------------------
+# Anything that talks to the network runs with GIT_CONFIG_GLOBAL=/dev/null, which
+# ignores ~/.gitconfig for that command. This repo's own gitconfig sets
+# `url.git@github.com:.insteadOf = https://github.com/`, so once the dotfiles are
+# installed git silently rewrites the HTTPS remote below to SSH — which fails on a
+# machine with no key, exactly the machine this script exists to set up. Purely
+# local git commands are left alone.
+git_net() { GIT_CONFIG_GLOBAL=/dev/null git "$@"; }
+
 if [ -d "$DEST/.git" ]; then
   log "Updating existing clone at $DEST"
-  git -C "$DEST" fetch --quiet origin "$REF"
+  git_net -C "$DEST" fetch --quiet origin "$REF"
   if [ -n "$(git -C "$DEST" status --porcelain)" ]; then
     # Local edits are the normal state here — this repo is meant to be tweaked.
     # Never blow them away; just run what is already on disk.
@@ -96,11 +104,7 @@ elif [ -e "$DEST" ]; then
   die "$DEST exists but is not a git clone. Move it aside, or set MAC_SETUP_DIR."
 else
   log "Cloning $REPO_URL -> $DEST"
-  # GIT_CONFIG_GLOBAL=/dev/null ignores ~/.gitconfig for this one command. This
-  # repo's own gitconfig sets `url.git@github.com:.insteadOf = https://github.com/`,
-  # which would rewrite the HTTPS URL below to SSH and fail on a machine that has
-  # no key yet — exactly the machine this script exists to set up.
-  GIT_CONFIG_GLOBAL=/dev/null git clone --branch "$REF" "$REPO_URL" "$DEST"
+  git_net clone --branch "$REF" "$REPO_URL" "$DEST"
 fi
 
 # 4) Hand off -----------------------------------------------------------------
