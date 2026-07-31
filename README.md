@@ -2,6 +2,37 @@
 
 Reproducible macOS developer setup for Apple Silicon — Homebrew packages, dotfiles, language runtimes, and Nix.
 
+## Install
+
+On a brand-new Mac, paste this into Terminal:
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/AntoineToussaint/mac-setup/main/bootstrap.sh)"
+```
+
+[`bootstrap.sh`](bootstrap.sh) only closes the gap a fresh Mac leaves — Xcode
+Command Line Tools (for `git`), Homebrew, and cloning this repo to `~/mac-setup`
+— then hands off to [`setup.sh`](setup.sh), which does the real work. It is
+re-runnable: a second run updates the clone instead of failing, and leaves local
+edits alone.
+
+Options after `--` are passed through, e.g. a sudo-free run:
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/AntoineToussaint/mac-setup/main/bootstrap.sh)" -- --user-only
+```
+
+Prefer to read before you run? That is the sensible instinct with any
+`curl | bash` — clone it and look first:
+
+```bash
+git clone https://github.com/AntoineToussaint/mac-setup.git ~/mac-setup
+bash ~/mac-setup/setup.sh
+```
+
+`MAC_SETUP_DIR` clones somewhere other than `~/mac-setup`; `MAC_SETUP_REF`
+checks out a branch other than `main`.
+
 ## Setup / Usage
 
 ```bash
@@ -22,6 +53,9 @@ What it does:
 
 1. **Homebrew** — `brew update` + `brew bundle` from the [`Brewfile`](Brewfile), then `brew upgrade`.
 2. **Dotfiles** — symlinks `dotfiles/*` into `~` (existing real files are backed up to `*.bak-<timestamp>`).
+   Your git identity is *not* in the tracked `dotfiles/gitconfig` — it asks once and writes
+   `~/.config/git/identity`, which that file `[include]`s. Change it with `--reconfigure`.
+   Commit signing is only switched on if you ask for it and 1Password's `op-ssh-sign` is present.
 3. **Runtimes** — installs and upgrades node/python/go/rust via [mise](https://mise.jdx.dev), plus rustup components and Go's `air`.
 4. **Nix** — Determinate Systems installer / upgrade (not via Homebrew).
 5. **Security** — runs [`security.sh`](security.sh): firewall + stealth, auto-updates, npm `ignore-scripts`, Touch ID for sudo (skip with `--no-security`).

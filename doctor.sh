@@ -199,10 +199,10 @@ check "nix on PATH" command -v nix
 # ---------- Git & credentials -------------------------------------------------
 section "Git & credentials"
 check "gh authenticated" gh auth status
-[ -n "$(git config --global user.email 2>/dev/null)" ] \
-  && ok "git identity set ($(git config --global user.email))" \
-  || bad "git identity missing — edit dotfiles/gitconfig"
-case "$(git config --global gpg.ssh.program 2>/dev/null)" in
+[ -n "$(git config --global --includes user.email 2>/dev/null)" ] \
+  && ok "git identity set ($(git config --global --includes user.email))" \
+  || bad "git identity missing — run: bash setup.sh --reconfigure"
+case "$(git config --global --includes gpg.ssh.program 2>/dev/null)" in
   *op-ssh-sign*) ok "commit signing via 1Password (op-ssh-sign)" ;;
   *) warn "op-ssh-sign not configured in gitconfig" ;;
 esac

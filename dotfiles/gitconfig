@@ -1,24 +1,13 @@
-# ~/.gitconfig — managed by ~/mac-setup
-# EDIT the [user] section with your name/email before/after running setup.
-
-[user]
-	name = Antoine Toussaint
-	email = toussaint.antoine@gmail.com
-	signingkey = ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIED6cVt25/A3QkGZ+5vZy8vNiNQECPdb5/t5ShMz6BLj
+# ~/.gitconfig — managed by ~/mac-setup (symlinked; edits here are tracked in git)
+#
+# Your identity and commit-signing settings do NOT live here — they are personal,
+# so setup.sh asks for them once and writes them to the untracked file below.
+# Change them any time by editing that file, or re-run: setup.sh --reconfigure
+[include]
+	path = ~/.config/git/identity
 
 [init]
 	defaultBranch = main
-
-# ---------- SSH commit signing via 1Password (commits show "Verified" on GitHub) ----------
-[gpg]
-	format = ssh
-[gpg "ssh"]
-	program = /Applications/1Password.app/Contents/MacOS/op-ssh-sign
-	allowedSignersFile = ~/.ssh/allowed_signers
-[commit]
-	gpgsign = true
-[tag]
-	gpgsign = true
 
 [pull]
 	rebase = true
@@ -55,3 +44,5 @@
 [credential "https://gist.github.com"]
 	helper = 
 	helper = !/opt/homebrew/bin/gh auth git-credential
+[url "git@github.com:"]
+	insteadOf = https://github.com/
