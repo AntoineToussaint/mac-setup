@@ -20,6 +20,15 @@ path=(
 [[ -d "$HOME/.lmstudio/bin" ]] && path+=("$HOME/.lmstudio/bin")
 
 export PATH
+
+# Pin `go install` output to a stable directory. mise's Go plugin otherwise
+# points GOBIN at the ACTIVE TOOLCHAIN's bin dir
+# (~/.local/share/mise/installs/go/<version>/bin). With `go = "latest"` in
+# ~/.config/mise/config.toml, every Go release moves that path and silently
+# orphans every previously installed binary. ~/go/bin is GOPATH/bin, already on
+# PATH above, and is what setup.sh assumes when it installs Go tools.
+export GOBIN="$HOME/go/bin"
+
 export EDITOR=nvim
 export VISUAL="$EDITOR"
 export PAGER=less
