@@ -24,7 +24,12 @@ sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setstealthmode on
 
 # ---------- Automatic updates -------------------------------------------------
 log "Enabling automatic macOS + security updates (sudo)"
-sudo defaults write /Library/Preferences/com.apple.SoftwareUpdate AutomaticCheckEnabled -bool true
+# Automatic checking goes through softwareupdate, not defaults: writing
+# AutomaticCheckEnabled by hand does not reliably take effect on current macOS
+# (the key stays absent and the system uses its own default), so the plist write
+# alone was unverifiable. `--schedule on` is the supported switch, and it is what
+# doctor.sh reads back.
+sudo softwareupdate --schedule on >/dev/null
 sudo defaults write /Library/Preferences/com.apple.SoftwareUpdate AutomaticDownload -bool true
 sudo defaults write /Library/Preferences/com.apple.SoftwareUpdate AutomaticallyInstallMacOSUpdates -bool true
 sudo defaults write /Library/Preferences/com.apple.SoftwareUpdate CriticalUpdateInstall -bool true

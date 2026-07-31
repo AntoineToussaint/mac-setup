@@ -55,7 +55,15 @@ su_key() { # su_key <domain-path> <key> <label>
   else bad "$3 — re-run security.sh"; fi
 }
 SU=/Library/Preferences/com.apple.SoftwareUpdate
-su_key "$SU" AutomaticCheckEnabled            "check for updates"
+# "Check for updates" is NOT read from the plist. macOS treats an ABSENT
+# AutomaticCheckEnabled key as enabled, so `defaults read` returning nothing is
+# the normal state on a healthy machine and su_key would report a false failure.
+# `softwareupdate --schedule` is the supported reader and accounts for the
+# default, MDM profiles, and per-host overrides alike.
+case "$(softwareupdate --schedule 2>/dev/null)" in
+  *"turned on"*) ok "check for updates" ;;
+  *)             bad "check for updates — re-run security.sh" ;;
+esac
 su_key "$SU" AutomaticDownload                "download updates"
 su_key "$SU" AutomaticallyInstallMacOSUpdates "install macOS updates"
 su_key "$SU" CriticalUpdateInstall            "install security responses"
@@ -180,8 +188,19 @@ fi
 
 # ---------- Packages & runtimes ----------------------------------------------
 section "Homebrew"
-check "everything in Brewfile installed (brew bundle check)" \
-  brew bundle check --file="$DIR/Brewfile"
+# Two different questions, two different severities. Plain `brew bundle check`
+# fails on merely-OUTDATED packages as well as missing ones, which made a normal
+# machine report a hard failure a day after setup — casks like ChatGPT ship
+# updates constantly. --no-upgrade asks only "is anything actually missing".
+if brew bundle check --file="$DIR/Brewfile" --no-upgrade >/dev/null 2>&1; then
+  if brew bundle check --file="$DIR/Brewfile" >/dev/null 2>&1; then
+    ok "everything in Brewfile installed and current"
+  else
+    warn "Brewfile packages installed but some are outdated — brew upgrade"
+  fi
+else
+  bad "packages in Brewfile are MISSING — brew bundle install --file=$DIR/Brewfile"
+fi
 
 section "Language runtimes (mise)"
 if command -v mise >/dev/null 2>&1; then
