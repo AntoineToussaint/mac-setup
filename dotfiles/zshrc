@@ -16,6 +16,11 @@ TIMEFMT=$'\n%J  %U user %S system %P cpu %E total'
 [[ -d "$HOME/.config/zsh/completions" ]] &&
   fpath=("$HOME/.config/zsh/completions" $fpath)
 autoload -Uz compinit && compinit
+# Google Cloud SDK is a cask, so its completion isn't in brew's site-functions
+# (unlike the awscli formula). It ships a sourced .inc instead of an autoload file.
+_gcloud_inc="$HOMEBREW_PREFIX/share/google-cloud-sdk/completion.zsh.inc"
+[[ -r "$_gcloud_inc" ]] && source "$_gcloud_inc"
+unset _gcloud_inc
 zstyle ':completion:*' menu no
 zstyle ':completion:*' matcher-list 'm:{a-zA-Z}={A-Za-z}'  # case-insensitive
 zstyle ':completion:*:descriptions' format '[%d]'

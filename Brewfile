@@ -151,7 +151,9 @@ brew "k9s"          # Kubernetes TUI
 brew "kubectx"      # fast context + namespace switching (installs kubectx & kubens)
 brew "stern"        # multi-pod / multi-container log tailing
 brew "helm"         # Kubernetes package manager
+brew "f1bonacc1/tap/process-compose"  # docker-compose-style orchestrator for local (non-container) processes
 brew "awscli"      # AWS CLI
+cask "google-cloud-sdk"  # Google Cloud CLI — `gcloud`, `gsutil`, `bq`
 brew "flarectl"     # Cloudflare CLI (official, cloudflare-go). Needed to DELETE DNS
                     # records — cloudflared can only create them. Wants a
                     # Zone:DNS:Edit API token in CF_API_TOKEN.

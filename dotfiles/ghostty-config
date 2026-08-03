@@ -5,6 +5,9 @@ font-size = 14
 # FiraCode ligatures (!= <= => === ->) render automatically; Ghostty has calt on by default.
 
 theme = "TokyoNight Storm"
+# Blacken the theme: TokyoNight Storm's default bg (#24283b) reads as purple slate.
+# Override to near-black so the window is black, not mocha.
+background = #0b0c10
 # De-purple: replace the magenta ANSI slots with a near-black slate
 palette = 5=#414868
 palette = 13=#565f89
