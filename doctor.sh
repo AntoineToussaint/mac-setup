@@ -125,6 +125,19 @@ linkcheck "$HOME/.local/bin/devtunnel-guard" "$DIR/bin/devtunnel-guard"
 linkcheck "$HOME/.config/starship.toml"      "$DOTS/starship.toml"
 linkcheck "$HOME/.config/ghostty/config"     "$DOTS/ghostty-config"
 linkcheck "$HOME/.gitconfig"                 "$DOTS/gitconfig"
+# Because ~/.zshrc IS a symlink into this repo, any installer that appends to it
+# ("# bun completions", nvm, conda, the Rust/Deno installers…) writes straight
+# into tracked source. That is usually harmless, but a tool run from a git
+# worktree or an agent sandbox appends a path under /private/tmp or /var/folders
+# that vanishes when the sandbox does — dead code, symlinked onto every machine
+# this repo sets up, in a PUBLIC repo. Catch it here rather than at commit time.
+if EPHEMERAL=$(grep -rlE '/private/tmp/|/var/folders/|/scratchpad/' "$DOTS" 2>/dev/null); then
+  for f in $EPHEMERAL; do
+    bad "$f references an ephemeral sandbox path — an installer appended to it; git diff and revert"
+  done
+else
+  ok "no ephemeral sandbox paths leaked into dotfiles"
+fi
 check "zsh startup files parse" zsh -n \
   "$DOTS/zshenv" "$DOTS/zprofile" "$DOTS/zshrc" "$DOTS/shortcuts.zsh" \
   "$DOTS/completions/_shell-coach" "$DIR/bin/shell-coach" "$DIR/bin/devtunnel"
