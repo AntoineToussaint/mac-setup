@@ -141,9 +141,14 @@ if command -v cloudflared >/dev/null 2>&1; then
   # (the only kind with a fixed hostname) cannot be created or routed.
   if [ -f "$HOME/.cloudflared/cert.pem" ]; then ok "cloudflared authenticated"
   else warn "cloudflared not authenticated — run 'devtunnel login' before the first tunnel"; fi
-  N=$(ls "$HOME"/.cloudflared/dev-*.yml 2>/dev/null | wc -l | tr -d ' ')
-  [ "$N" -gt 0 ] && ok "$N devtunnel hostname(s) configured — 'devtunnel ls'" \
-                 || warn "no devtunnel hostnames yet — 'devtunnel up <host> <port>'"
+  # Count via a glob array rather than `ls | wc -l`: no subshell, and an
+  # unmatched glob stays literal, so test element 0 for existence.
+  TUNNELS=("$HOME"/.cloudflared/dev-*.yml)
+  if [ -e "${TUNNELS[0]}" ]; then
+    ok "${#TUNNELS[@]} devtunnel hostname(s) configured — 'devtunnel ls'"
+  else
+    warn "no devtunnel hostnames yet — 'devtunnel up <host> <port>'"
+  fi
 else
   bad "cloudflared missing — brew bundle --file=$DIR/Brewfile"
 fi
@@ -155,6 +160,8 @@ if [ -x /Applications/Tailscale.app/Contents/MacOS/Tailscale ]; then
   # from anywhere else dies on SIGTRAP (broken code signature), and zshenv's
   # PATH order would let such a symlink shadow the working shim.
   if [ -L "$HOME/.local/bin/tailscale" ]; then
+    # ~ here is display text in a message to the reader, not a path to expand.
+    # shellcheck disable=SC2088
     bad "~/.local/bin/tailscale is a symlink — it shadows the app shim and crashes; rm it"
   elif command -v tailscale >/dev/null 2>&1 && tailscale version >/dev/null 2>&1; then
     ok "tailscale CLI works ($(command -v tailscale))"
@@ -202,6 +209,15 @@ else
   bad "packages in Brewfile are MISSING — brew bundle install --file=$DIR/Brewfile"
 fi
 
+section "GNU gap fillers (macOS ships no timeout/tac/shuf/nproc/numfmt)"
+for tool in timeout tac shuf nproc numfmt; do
+  if command -v "$tool" >/dev/null 2>&1; then
+    ok "$tool available ($(command -v "$tool"))"
+  else
+    bad "$tool missing — brew install coreutils, then re-run setup.sh"
+  fi
+done
+
 section "Language runtimes (mise)"
 if command -v mise >/dev/null 2>&1; then
   eval "$(mise activate bash)" 2>/dev/null || true
@@ -218,9 +234,11 @@ check "nix on PATH" command -v nix
 # ---------- Git & credentials -------------------------------------------------
 section "Git & credentials"
 check "gh authenticated" gh auth status
-[ -n "$(git config --global --includes user.email 2>/dev/null)" ] \
-  && ok "git identity set ($(git config --global --includes user.email))" \
-  || bad "git identity missing — run: bash setup.sh --reconfigure"
+if [ -n "$(git config --global --includes user.email 2>/dev/null)" ]; then
+  ok "git identity set ($(git config --global --includes user.email))"
+else
+  bad "git identity missing — run: bash setup.sh --reconfigure"
+fi
 case "$(git config --global --includes gpg.ssh.program 2>/dev/null)" in
   *op-ssh-sign*) ok "commit signing via 1Password (op-ssh-sign)" ;;
   *) warn "op-ssh-sign not configured in gitconfig" ;;

@@ -271,7 +271,11 @@ if [ "$RECONFIGURE" -eq 1 ] || [ ! -f "$GIT_IDENTITY" ]; then
      && ask "Use a separate Git identity for personal projects kept in one folder?"; then
     read_line PERSONAL_DIR "$(printf "\033[1;36m??\033[0m Folder that holds your personal projects [~/personal]: ")"
     PERSONAL_DIR="${PERSONAL_DIR:-$HOME/personal}"
-    case "$PERSONAL_DIR" in                     # expand a leading ~ (read gives it literally)
+    # Expand a leading ~ (read gives it literally). These are case PATTERNS
+    # matching a literal tilde, not paths to expand — the quotes are what stops
+    # glob interpretation, so SC2088's "use $HOME" advice is inverted here.
+    # shellcheck disable=SC2088
+    case "$PERSONAL_DIR" in
       "~")   PERSONAL_DIR="$HOME" ;;
       "~/"*) PERSONAL_DIR="$HOME/${PERSONAL_DIR#\~/}" ;;
     esac

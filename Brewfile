@@ -43,6 +43,50 @@ brew "trippy"       # mtr/traceroute replacement (binary: trip)
 brew "gping"        # ping with a live graph
 brew "asciinema"    # record/share terminal sessions
 
+# ---------- GNU gap fillers (macOS ships a BSD userland) ----------
+# macOS has NO `timeout`, `tac`, `shuf`, `nproc` or `numfmt` at all — scripts and
+# agents that reach for `timeout 30 cmd` just fail with "command not found".
+brew "coreutils"    # Installing it is the whole fix: coreutils g-prefixes ONLY the
+                    # names macOS also ships (gsed, gdate, gls), and puts the ones
+                    # macOS lacks straight into bin unprefixed — so `timeout`, `tac`,
+                    # `shuf`, `nproc`, `numfmt` just work, no PATH surgery.
+                    # Do NOT add libexec/gnubin to PATH (the caveat's suggestion):
+                    # that swaps sed/date/ls/cp/stat machine-wide, and installers,
+                    # brew formulae and vendor scripts assume BSD flags.
+brew "moreutils"    # sponge (write back to the file you're reading — `jq . f | sponge f`),
+                    # ts (timestamp each line of a stream), chronic (run quietly,
+                    # print only if it fails), vipe, errno, ifne.
+                    # Conflicts with the `parallel` formula, so no GNU parallel here —
+                    # watchexec + hyperfine + `xargs -P` already cover that ground.
+brew "gawk"         # GNU awk — macOS ships the one-true-awk (no gensub, asorti, regex RS)
+brew "watch"        # macOS has no `watch` — re-run a command on an interval
+brew "pv"           # pipe viewer — progress/throughput bar for any pipe
+
+# ---------- macOS automation ----------
+brew "mas"                # Mac App Store CLI. This is how Xcode gets scripted:
+                          # `mas install 497799835` — see the Xcode note below.
+brew "dockutil"           # add/remove/reorder Dock items from a script (macos-defaults.sh)
+brew "terminal-notifier"  # Notification Center from a shell script — `setup.sh; terminal-notifier -message done`
+brew "defaultbrowser"     # set the default browser non-interactively
+
+# ---------- Data from the shell ----------
+brew "duckdb"       # SQL straight over CSV/Parquet/JSON, no server, no import step:
+                    # `duckdb -c "select * from 'x.csv' where …"`
+brew "jless"        # JSON/YAML TUI viewer — jq is for scripting, jless is for spelunking
+brew "sqlite-utils" # inspect/transform SQLite from the CLI (and CSV/JSON -> SQLite)
+
+# ---------- Local web & network dev ----------
+brew "mkcert"       # locally-trusted HTTPS certs for localhost — the offline
+                    # counterpart to cloudflared/devtunnel when you need real TLS
+brew "oha"          # HTTP load testing with a live TUI (Rust) — `oha -z 10s http://localhost:3000`
+brew "websocat"     # curl for WebSockets — connect, send frames, pipe stdin
+
+# ---------- Media & documents ----------
+brew "ffmpeg"       # the universal audio/video converter. Big install (~fifty deps).
+brew "imagemagick"  # the universal image converter (`magick in.png out.webp`)
+brew "poppler"      # pdftotext / pdfimages / pdfinfo — makes PDFs greppable (and agent-readable)
+brew "pandoc"       # convert between markdown, docx, HTML, LaTeX, PDF…
+
 # ---------- Git ----------
 brew "git"
 brew "gh"           # GitHub CLI
@@ -88,6 +132,9 @@ brew "delve"          # debugger (dlv) — understands goroutines/runtime
 # air (live reload) — installed via `go install` in setup.sh
 # JS / TypeScript / Next.js
 brew "biome"          # Rust linter + formatter (ESLint + Prettier replacement)
+# Shell — this repo is itself ~2k lines of bash/zsh; lint it like real code
+brew "shellcheck"     # THE shell linter — catches unquoted expansions, bad [[ ]], set -e traps
+brew "shfmt"          # shell formatter (also a `bash-language-server` companion)
 
 # ---------- IDEs & editors ----------
 # Daily drivers:
@@ -100,7 +147,8 @@ cask "zed"                 # upstream Zed — gram is a fork, so test against th
 cask "jetbrains-toolbox"   # installs/manages IntelliJ, PyCharm, GoLand, RustRover, WebStorm…
 cask "sublime-text"        # still common enough to be worth a smoke test (subl CLI)
 # Windsurf's cask was renamed "devin-desktop" after the Cognition acquisition — add if needed.
-# Xcode is App Store-only (or the `xcodes` cask) — not brewed here.
+# Xcode is App Store-only (or the `xcodes` cask) — not brewed here. With `mas`
+# installed (see macOS automation) it is at least scriptable: `mas install 497799835`.
 
 # ---------- Apps ----------
 cask "raycast"       # launcher / Spotlight replacement (free)
@@ -123,6 +171,8 @@ cask "blockblock"     # alerts when anything installs persistence (launch agents
 cask "knockknock"     # audits what is already persistently installed — run after setup
 cask "oversight"      # mic/camera access alerts
 brew "age"            # modern file encryption (simple, keypair-based)
+brew "gitleaks"       # scan history + working tree for committed secrets.
+                      # This repo is public — run `gitleaks git .` before pushing.
 # NextDNS (DNS threat-feed filtering) is account-based — see README → Security.
 
 # ---------- API & gRPC ----------
@@ -153,7 +203,7 @@ brew "stern"        # multi-pod / multi-container log tailing
 brew "helm"         # Kubernetes package manager
 brew "f1bonacc1/tap/process-compose"  # docker-compose-style orchestrator for local (non-container) processes
 brew "awscli"      # AWS CLI
-cask "google-cloud-sdk"  # Google Cloud CLI — `gcloud`, `gsutil`, `bq`
+cask "gcloud-cli"   # Google Cloud CLI — `gcloud`, `gsutil`, `bq` (was google-cloud-sdk)
 brew "flarectl"     # Cloudflare CLI (official, cloudflare-go). Needed to DELETE DNS
                     # records — cloudflared can only create them. Wants a
                     # Zone:DNS:Edit API token in CF_API_TOKEN.
