@@ -158,9 +158,12 @@ cask "google-chrome" # browser
 cask "1password"     # password manager (already installed)
 cask "1password-cli" # `op` CLI — secrets in scripts, git signing, ssh agent
 cask "obsidian"      # local markdown notes
+cask "notion"        # workspace / docs (cloud counterpart to obsidian's local notes)
+cask "notion-calendar" # calendar client (the app formerly known as Cron)
 cask "stats"         # menu-bar system monitor
 cask "slack"         # team chat
 cask "discord"       # chat/communities
+cask "spotify"       # music
 
 # Get from Setapp (already in your subscription — do NOT brew):
 #   CleanShot X · Bartender · CleanMyMac · Gifox · Sip
@@ -193,7 +196,27 @@ cask "chatgpt"      # ChatGPT desktop — NOTE: 566MB from a flaky CDN (persiste
 cask "codex"        # OpenAI Codex CLI (official cask). No silent auto-update, but
                     # `codex update` (install-method-aware) or `brew upgrade` keeps it current.
 brew "llm"          # Multi-provider LLM CLI wrapper (OpenAI built in; more via plugins)
-brew "ollama"       # run LLMs locally
+brew "gemini-cli"   # Google's agent CLI — third seat next to Claude Code and Codex
+brew "notion-mcp-server" # official Notion MCP server — lets agents read/write the
+                    # workspace. Needs an integration token (notion.so/profile/integrations)
+                    # in NOTION_TOKEN + registration via `claude mcp add`; installing
+                    # the formula alone does nothing.
+brew "ccusage"      # prices your agent token usage at API rates: what the subscription
+                    # "would have cost" in cash. Reads local JSONL logs for Claude Code,
+                    # Codex, Gemini CLI, Copilot, OpenCode, Goose… `ccusage daily|monthly
+                    # |session`, `--json` for scripting. Nothing leaves the machine.
+
+# ---------- Local inference ----------
+# Ollama 0.19+ (Mar 2026) runs a native MLX runner on Apple Silicon, so the formula
+# below is already on Apple's fast path — no separate "Mac edition" to install.
+brew "ollama"       # run LLMs locally (CLI + server, OpenAI-compatible API)
+cask "ollama-app"   # the official Ollama GUI on top of that server
+brew "mlx-lm"       # Apple MLX inference CLI — Apple Silicon only, ~20-50% faster
+                    # than llama.cpp on the same model/quant. `mlx_lm.generate|server`
+brew "llama.cpp"    # reference engine + GGUF tooling (quantize, convert, llama-bench)
+cask "lm-studio"    # GUI model browser + headless server (llmster), MLX engine
+# jan (offline chat app, native MLX since 0.7.7) is the FOSS alternative to LM Studio.
+# msty/msty-studio: discontinued upstream, cask disabled 2027-01-02 — do NOT add.
 
 # ---------- Cloud / infra ----------
 brew "kubectl"      # Kubernetes CLI

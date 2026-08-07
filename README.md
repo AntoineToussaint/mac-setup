@@ -64,6 +64,37 @@ What it does:
 At the end, `setup.sh` prints only authentication or identity follow-ups that
 live checks show are still needed.
 
+### Raycast extensions
+
+Raycast extensions cannot be installed by script, and `brew bundle` cannot
+restore them. They live in Raycast's own store plus an encrypted SQLite database
+(`raycast-enc.sqlite`, key in the Keychain), so copying the support directory to
+a new Mac does not work. The web store's *Install Extension* button resolves to
+`raycast://extensions/<author>/<extension>?source=webstore`, but invoking that
+with `open` does nothing outside the browser handoff — tested, no install.
+
+What does work is Raycast's own export/import, which is free (Cloud Sync, the
+continuous alternative, is Pro-only):
+
+1. On a Mac that is already set up, run Raycast's **Export Settings & Data**
+   command and choose a passphrase (8+ characters). It writes a `.rayconfig`
+   bundling 11 categories — one of which is *Extensions installed from the Store*.
+2. Save that file to `~/mac-setup/raycast/` or point `RAYCAST_CONFIG` at it.
+   **Never commit it**: the same bundle carries clipboard history, notes and AI
+   chats. `.gitignore` excludes `raycast/` and `*.rayconfig` — keep it in
+   1Password or iCloud instead.
+3. On the new Mac, `setup.sh` finds it and runs `open` on it, which lands
+   directly in Raycast's import dialog (Raycast owns the `.rayconfig` file type).
+   Enter the passphrase and tick at least *Extensions installed from the Store*.
+
+That last step is manual by necessity — nothing in Raycast accepts a passphrase
+non-interactively. Once offered, a stamp at `~/.config/mac-setup/raycast-imported`
+stops it repeating; delete the stamp to be asked again.
+
+Note that a `.rayconfig` is an encrypted blob, **not** a reviewable manifest: it
+cannot be diffed or hand-edited to add one extension, unlike the `Brewfile`.
+Raycast exposes no plain-text extension list.
+
 `setup.sh` runs [`doctor.sh`](doctor.sh) automatically. You can also run it
 standalone at any time; it checks hardening, dotfile symlinks, the Brewfile,
 runtimes, and credentials, then lists unchecked manual items from [`TODO.md`](TODO.md).
@@ -329,6 +360,12 @@ Editors: `gram` (Zed fork), `cursor` (AI-first VS Code fork), `neovim`.
 Compat-testing IDEs (installed, not daily drivers): `visual-studio-code`,
 `zed` (upstream), `jetbrains-toolbox` (IntelliJ/PyCharm/GoLand/…), `sublime-text`.
 Agent orchestration: `conductor` (parallel Claude Code agents in git worktrees).
+Agent spend: `ccusage daily` / `monthly` prices the tokens Claude Code, Codex and
+Gemini CLI burned at API rates — i.e. what the flat-rate subscriptions would have
+cost in cash. Reads local JSONL logs only; nothing leaves the machine.
+Local inference: `ollama` (CLI+server, native MLX runner on Apple Silicon since
+0.19) with `ollama-app` as its GUI; `mlx-lm` for Apple's MLX directly (fastest on
+Apple Silicon); `llama.cpp` for GGUF tooling; `lm-studio` for a GUI + headless server.
 
 ## Sources
 

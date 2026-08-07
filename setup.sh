@@ -447,6 +447,46 @@ else
   log "Claude Code present ($(claude --version 2>/dev/null || echo installed)) — it self-updates"
 fi
 
+# Raycast extensions: there is NO scriptable installer. Extensions live in
+# Raycast's own store and an encrypted sqlite DB (raycast-enc.sqlite, key in the
+# Keychain), so `brew bundle` can't restore them and copying the support dir
+# between machines does not survive. The web store's Install button resolves to
+# `raycast://extensions/<author>/<ext>?source=webstore`, but firing that with
+# `open` does nothing outside the browser handoff — tested, no install.
+#
+# What does work is Raycast's own Export/Import (free, not Pro). "Export
+# Settings & Data" writes a passphrase-encrypted .rayconfig bundling 11
+# categories, one of which is "Extensions installed from the Store"; Raycast
+# registers .rayconfig as an owned document type, so `open` on the file lands
+# directly in the import dialog. Still needs the passphrase typed by hand.
+#
+# Point RAYCAST_CONFIG at an export, or drop one in ~/mac-setup/raycast/.
+# NEVER commit it: the same bundle carries clipboard history, notes and AI chats
+# (.gitignore excludes it).
+# Idempotency is a stamp file, not a probe of Raycast's state: the installed-
+# extension list lives in the encrypted sqlite DB, and ~/…/com.raycast.macos/
+# extensions/ holds a com.raycast.api.cache directory even with zero extensions
+# installed — so "directory is non-empty" is NOT a usable signal.
+RAYCAST_STAMP="$HOME/.config/mac-setup/raycast-imported"
+RAYCAST_CONFIG="${RAYCAST_CONFIG:-}"
+if [ -d "/Applications/Raycast.app" ] && [ -z "$RAYCAST_CONFIG" ]; then
+  for candidate in "$DIR/raycast/"*.rayconfig \
+                   "$HOME/Library/Mobile Documents/com~apple~CloudDocs/mac-setup/"*.rayconfig; do
+    [ -f "$candidate" ] && { RAYCAST_CONFIG="$candidate"; break; }
+  done
+fi
+if [ -d "/Applications/Raycast.app" ] && [ -n "$RAYCAST_CONFIG" ] && [ ! -e "$RAYCAST_STAMP" ]; then
+  log "Restoring Raycast settings + store extensions"
+  if ask "Import $(basename "$RAYCAST_CONFIG") into Raycast now?"; then
+    open "$RAYCAST_CONFIG"
+    mkdir -p "$(dirname "$RAYCAST_STAMP")"
+    printf 'imported %s from %s\n' "$STAMP" "$RAYCAST_CONFIG" > "$RAYCAST_STAMP"
+    echo "  Raycast is showing the import dialog: enter the export passphrase,"
+    echo "  then tick at least 'Extensions installed from the Store'."
+    echo "  Delete $RAYCAST_STAMP to be offered this again."
+  fi
+fi
+
 # 4) Nix (Determinate installer — NOT via Homebrew) --------------------------
 if [ "$USER_ONLY" -eq 1 ]; then
   log "Skipping Nix (--user-only)"
@@ -486,6 +526,10 @@ fi
 LINEAR_AUTH_STATE="$(linear auth list 2>/dev/null || true)"
 if [ -z "$LINEAR_AUTH_STATE" ] || [[ "$LINEAR_AUTH_STATE" == *"No workspaces configured"* ]]; then
   next_step "Authenticate Linear CLI: linear auth login"
+fi
+
+if [ -d "/Applications/Raycast.app" ] && [ -z "$RAYCAST_CONFIG" ] && [ ! -e "$RAYCAST_STAMP" ]; then
+  next_step "Restore Raycast extensions: no .rayconfig export found. On a Mac that is already set up, run Raycast's 'Export Settings & Data' command, then save the file to ~/mac-setup/raycast/ (gitignored) or point RAYCAST_CONFIG at it."
 fi
 
 if [ -z "$(git config --global --includes user.name 2>/dev/null)" ] \
