@@ -224,9 +224,22 @@ brew "k9s"          # Kubernetes TUI
 brew "kubectx"      # fast context + namespace switching (installs kubectx & kubens)
 brew "stern"        # multi-pod / multi-container log tailing
 brew "helm"         # Kubernetes package manager
+brew "kustomize"    # manifest overlays (patch base YAML per env without templating)
+brew "kind"         # local k8s cluster in Docker — test manifests before EKS/GKE
 brew "f1bonacc1/tap/process-compose"  # docker-compose-style orchestrator for local (non-container) processes
 brew "awscli"      # AWS CLI
+brew "eksctl"       # create/manage EKS clusters (awscli only talks to existing ones)
+brew "aws-vault"    # stores AWS creds in the macOS keychain, injects short-lived
+                    # creds per-shell instead of long-lived keys in ~/.aws/credentials
+cask "session-manager-plugin" # needed for `aws ssm start-session` — bastion-less
+                    # shell into EC2/ECS without opening SSH
 cask "gcloud-cli"   # Google Cloud CLI — `gcloud`, `gsutil`, `bq` (was google-cloud-sdk)
+                    # GKE auth needs a separate component: `gcloud components install
+                    # gke-gcloud-auth-plugin` (not a brew package). EKS auth is native to awscli.
+brew "sops"         # encrypt secrets in git (used with kustomize/helm in GitOps flows)
+brew "opentofu"     # IaC for provisioning the AWS/GCP infra itself (FOSS terraform fork —
+                    # terraform itself was pulled from homebrew-core in 2023 over its BUSL
+                    # license change; use `hashicorp/tap/terraform` instead if you need upstream)
 brew "flarectl"     # Cloudflare CLI (official, cloudflare-go). Needed to DELETE DNS
                     # records — cloudflared can only create them. Wants a
                     # Zone:DNS:Edit API token in CF_API_TOKEN.
