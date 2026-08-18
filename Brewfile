@@ -160,6 +160,7 @@ cask "1password-cli" # `op` CLI — secrets in scripts, git signing, ssh agent
 cask "obsidian"      # local markdown notes
 cask "notion"        # workspace / docs (cloud counterpart to obsidian's local notes)
 cask "notion-calendar" # calendar client (the app formerly known as Cron)
+cask "linear"        # issue tracker desktop app (schpet/tap/linear above is the CLI)
 cask "stats"         # menu-bar system monitor
 cask "slack"         # team chat
 cask "discord"       # chat/communities
@@ -236,6 +237,11 @@ cask "session-manager-plugin" # needed for `aws ssm start-session` — bastion-l
 cask "gcloud-cli"   # Google Cloud CLI — `gcloud`, `gsutil`, `bq` (was google-cloud-sdk)
                     # GKE auth needs a separate component: `gcloud components install
                     # gke-gcloud-auth-plugin` (not a brew package). EKS auth is native to awscli.
+brew "azure-cli"    # Azure CLI — `az`. Bicep (Azure's IaC DSL) isn't a brew package either:
+                    # run `az bicep install` once az is set up.
+brew "kubelogin"    # AKS auth plugin — kubectl needs this for Azure AD/Entra ID login,
+                    # same role gke-gcloud-auth-plugin plays for GKE.
+brew "azcopy"       # fast Azure Blob/Files transfer CLI (az storage commands are slow for bulk data)
 brew "sops"         # encrypt secrets in git (used with kustomize/helm in GitOps flows)
 brew "opentofu"     # IaC for provisioning the AWS/GCP infra itself (FOSS terraform fork —
                     # terraform itself was pulled from homebrew-core in 2023 over its BUSL
