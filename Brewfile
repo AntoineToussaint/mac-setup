@@ -42,6 +42,8 @@ brew "doggo"        # dig replacement — modern DNS client
 brew "trippy"       # mtr/traceroute replacement (binary: trip)
 brew "gping"        # ping with a live graph
 brew "asciinema"    # record/share terminal sessions
+brew "agg"          # asciinema .cast → GIF converter
+brew "vhs"          # scripted terminal GIFs from a .tape file (Charm) — reproducible demos
 
 # ---------- GNU gap fillers (macOS ships a BSD userland) ----------
 # macOS has NO `timeout`, `tac`, `shuf`, `nproc` or `numfmt` at all — scripts and
