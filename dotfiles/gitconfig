@@ -44,3 +44,7 @@
 [credential "https://gist.github.com"]
 	helper = 
 	helper = !/opt/homebrew/bin/gh auth git-credential
+[gpg]
+	format = ssh
+[user]
+	signingkey = /Users/antoine/.ssh/id_ed25519.pub

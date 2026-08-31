@@ -94,3 +94,7 @@ if [[ -r "$_antidote_zsh" ]]; then
   antidote load
 fi
 unset _antidote_zsh
+
+# Added by rust-clean installer (https://github.com/AntoineToussaint/rust-clean)
+fpath=(/Users/antoine/.zsh/completions $fpath)
+autoload -Uz compinit && compinit

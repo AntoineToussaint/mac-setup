@@ -29,7 +29,21 @@ export PATH
 # PATH above, and is what setup.sh assumes when it installs Go tools.
 export GOBIN="$HOME/go/bin"
 
+# Never trust an inherited GOROOT. mise exports GOROOT for the go version that
+# was active when a long-lived parent (lazybox daemon, tmux, editor) started;
+# after a version bump, child shells then pair the NEW `go` driver from the
+# shims with the OLD toolchain, failing with 'compile: version "go1.X" does
+# not match go tool version "go1.Y"'. The go driver locates its own GOROOT
+# from its binary path, so the export is never needed — interactive shells get
+# a fresh, correct one back from `mise activate` in zshrc anyway.
+unset GOROOT
+
 export EDITOR=nvim
 export VISUAL="$EDITOR"
 export PAGER=less
 export LESS='-FRX'
+
+# obinctl resolves its coordinate registry relative to the repo you happen to be
+# standing in, so it fails from any checkout that is not infra-base. Pin it to the
+# stable clone (worktrees under ~/.lazybox come and go; this one does not).
+export OBIN_REGISTRY="$HOME/development/obin/infra-base/tools/obin-cli/registry"
