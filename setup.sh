@@ -168,11 +168,18 @@ fi
 # large flaky downloads (e.g. the ChatGPT cask) RESUME across re-runs.
 log "Refreshing Homebrew and installing packages (Brewfile)"
 brew update
-# Homebrew 6 refuses to install formulae from third-party taps unless trusted.
-# The Brewfile uses schpet/tap for the Linear CLI — trust it so `brew bundle`
-# doesn't abort the whole batch. No-ops if already trusted / tap absent.
-brew tap schpet/tap >/dev/null 2>&1 || true
-brew trust schpet/tap >/dev/null 2>&1 || true
+# Homebrew 6 refuses to install formulae from third-party taps unless trusted,
+# and the prompt it would show is invisible to a non-interactive run — so
+# `brew bundle` just aborts the whole batch. Pre-tap and pre-trust every
+# tap-qualified entry in the Brewfile (schpet/tap/linear,
+# f1bonacc1/tap/process-compose, ...) so new ones need no edit here.
+# No-ops if already trusted.
+while read -r kind pkg; do
+  [[ -n "$pkg" ]] || continue
+  brew tap "${pkg%/*}"                  >/dev/null 2>&1 || true
+  brew trust --"$kind" "$pkg"           >/dev/null 2>&1 || true
+done < <(awk -F'"' '/^(brew|cask) "[^"]+\/[^"]+\/[^"]+"/ {
+           print ($1 ~ /^cask/ ? "cask" : "formula"), $2 }' "$DIR/Brewfile")
 brew bundle --file="$DIR/Brewfile"
 log "Upgrading Homebrew packages"
 brew upgrade --yes
