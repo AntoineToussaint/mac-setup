@@ -1,12 +1,39 @@
-# Setappfile — Setapp apps installed on this Mac.
+# Setappfile — the Setapp apps this setup wants.
 #
-# Regenerate:  setapp-sync export
-# Restore:     setapp-sync install   (needs Setapp installed and signed in)
+# Regenerate:  setapp-sync export        (--prune to forget the wanted list)
+# Restore:     setapp-sync install       (needs Setapp installed and signed in)
 #
 # name<TAB>slug<TAB>app_id<TAB>bundle_id
 # app_id is the UUID the setapp://install deeplink wants — see bin/setapp-sync.
 
+# --- installed on this Mac (regenerated on every export) ---
 CleanShot X	cleanshot	5A3D5B98-F3EC-4A98-B140-652B6B1AAE62	com.getcleanshot.app-setapp
 In Your Face	in-your-face	E32350E9-5B95-41C5-B752-EB71F1509072	com.bluebanana-software.inyourface-setapp
 iStat Menus	istat-menus	B5F372C3-5874-45E5-8B43-998BF4BE3B8E	com.bjango.istatmenus-setapp
 Marked	marked	85361058-3F1F-4FC3-992D-2D446D3B6111	com.brettterpstra.marked-setapp
+
+# --- wanted (not installed here; setapp-sync install fetches these too) ---
+AlDente Pro	aldente-pro	2516F948-D35F-407B-B4BF-8BE4EEAB98F6	com.apphousekitchen.aldente-pro-setapp
+Bartender Pro	bartender	0D045F73-9503-4C96-B219-3C239D323B5D	com.surteesstudios.Bartender-setapp
+BetterTouchTool	bettertouchtool	AD464029-D5FE-4C5A-8679-9B32254488C2	com.hegenberg.bettertouchtool-setapp
+Clamshell	clamshell	0A449DB2-92BC-4004-A6B0-35DBE8E240C7	com.rathonyi.clamshell-setapp
+Core Tunnel	core-tunnel	4A050FAE-8977-411E-B428-CFB28D8264BF	io.coressh.tunnel-setapp
+Dash	dash	90F943E7-2047-4A65-B24D-6C684068F35F	com.kapeli.dash-setapp
+Dato	dato	B6076237-864E-44A9-A3BF-7DBFF3003FCB	com.sindresorhus.Dato-setapp
+DevUtils	devutils.app	2CF285B0-E0AC-451F-8CDB-7D75373A7D00	me.tdinh.devutils-setapp
+Expressions	expressions	647071B2-A45A-4460-9640-5993A96858AB	com.apptorium.Expressions-setapp
+KeyPulse	keypulse	1BAF212E-3C48-48B3-A080-75FF154D29F3	org.security-tech.keypulse-mac-setapp
+Lasso	lasso	7B64DA29-78B8-452B-9571-84EBD1AA52A6	com.heavylightapps.lasso-setapp
+LookAway	lookaway	842F60C5-F880-4E72-A842-88C112D79116	com.mysticalbits.lookaway-setapp
+Numi	numi	DE68E5A1-FCF4-4940-97CE-691BD7871AFD	com.nikolaeu.numi-setapp
+PacketWarden	packetwarden	430935FA-4BE0-48F1-8F3C-0F5B4A933B32	org.security-tech.packetwarden-mac-setapp
+Pareto Security	pareto-security	53F8C33B-5943-44A4-8A79-510BE0FD6AEE	niteo.co.Pareto-setapp
+PixelSnap	pixelsnap	132FF089-861E-421B-A019-438026FBD507	pl.maketheweb.pixelsnap2-setapp
+Proxyman	proxyman	884E443B-1F6E-4707-8510-3AA1ADA298A4	com.proxyman.NSProxy-setapp
+Pulldog	pulldog	5E914567-B141-455B-A33D-404209D765DC	com.natic.pull-setapp
+SnipperApp 3	snipperapp-3	CAC008FD-3D98-45AB-BF5C-BACBF8E97113	com.oloapps.Snipper3-setapp
+Supercharge	supercharge	5586C83E-E8C0-42F7-BE41-41B745CF312A	com.sindresorhus.Supercharge-setapp
+Swish	swish	91C5AB0B-A7FA-4539-B8B3-66EEF19B08BC	co.highlyopinionated.swish-setapp
+TablePlus	tableplus	9615CD8A-FD49-4C2A-8B6F-28969A484848	com.tinyapp.TablePlus-setapp
+TextSniper	textsniper	20BAA018-5A0B-4817-8E00-4D2BE761194E	com.valerijs.boguckis.TextSniper-setapp
+TripMode	tripmode	331C9D8A-3545-4847-BBB9-70438FF3FD46	ch.tripmode.TripMode-setapp

@@ -104,11 +104,18 @@ this one is fully scriptable, via [`Setappfile`](Setappfile) and
 [`bin/setapp-sync`](bin/setapp-sync):
 
 ```bash
-setapp-sync export        # rewrite Setappfile from what is installed here
+setapp-sync export        # refresh Setappfile from what is installed here
 setapp-sync list          # what the Setappfile holds, ✓ = already installed
 setapp-sync install       # install everything missing (confirm each panel)
 setapp-sync install -n    # ...dry run: print the deeplinks instead
+setapp-sync export --prune # ...and forget the wanted list
 ```
+
+The manifest has two sections. **installed** is regenerated from this Mac on
+every `export`. **wanted** is a wishlist — apps chosen but not installed here —
+and `export` carries it forward instead of dropping it, so hand-added picks
+survive a re-export. An app moves from *wanted* to *installed* on its own once it
+is actually on the machine and you re-export. `install` fetches both sections.
 
 `setup.sh` offers `install` automatically when `Setappfile` lists apps that are
 not on the machine. Setapp must be installed (`cask "setapp"` is in the
