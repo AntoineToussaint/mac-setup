@@ -95,6 +95,47 @@ Note that a `.rayconfig` is an encrypted blob, **not** a reviewable manifest: it
 cannot be diffed or hand-edited to add one extension, unlike the `Brewfile`.
 Raycast exposes no plain-text extension list.
 
+### Setapp apps
+
+A Setapp subscription is invisible to `brew bundle` — the apps live under
+`/Applications/Setapp/`, installed by Setapp's own agent — so a fresh Mac starts
+with an empty Setapp folder even after a full `setup.sh` run. Unlike Raycast,
+this one is fully scriptable, via [`Setappfile`](Setappfile) and
+[`bin/setapp-sync`](bin/setapp-sync):
+
+```bash
+setapp-sync export        # rewrite Setappfile from what is installed here
+setapp-sync list          # what the Setappfile holds, ✓ = already installed
+setapp-sync install       # install everything missing (confirm each panel)
+setapp-sync install -n    # ...dry run: print the deeplinks instead
+```
+
+`setup.sh` offers `install` automatically when `Setappfile` lists apps that are
+not on the machine. Setapp must be installed (`cask "setapp"` is in the
+[`Brewfile`](Brewfile)) and **signed in** first.
+
+Two undocumented pieces make it work:
+
+1. The desktop client caches the whole catalogue in a Core Data store at
+   `~/Library/Application Support/Setapp/Default/Databases/Apps.sqlite`. Its
+   `ZAPP` table maps each app's bundle identifier to a public UUID (`ZPUBLICID`,
+   a raw 16-byte blob). `export` reads a copy of the database — it is open in WAL
+   mode, so the `-wal` file has to come along — and joins it against the bundle
+   ids actually present under `/Applications/Setapp/`.
+2. `SetappAgent` registers the `setapp:` URL scheme, and its `InstallAppFromURL`
+   handler accepts `setapp://install?app_id=<UUID>` — the dashed, uppercase form
+   of that same `ZPUBLICID`. Nothing else is accepted: the numeric
+   `ZIDENTIFIER`, `app_name=`, and a `launch` host are all logged as *"URL is not
+   a valid install-from-URL link"*. The agent also refuses to start a second
+   install while one is running, so `install` fires one deeplink at a time and
+   waits for the bundle to appear (`SETAPP_INSTALL_TIMEOUT`, default 600s).
+
+Because the UUIDs are written into `Setappfile`, restoring does **not** depend
+on the catalogue cache being populated on the new Mac. The file is a plain
+tab-separated manifest — reviewable, diffable, and safe to commit (it holds app
+names and public ids, no account data), so unlike a `.rayconfig` you can add an
+app to it by hand.
+
 `setup.sh` runs [`doctor.sh`](doctor.sh) automatically. You can also run it
 standalone at any time; it checks hardening, dotfile symlinks, the Brewfile,
 runtimes, and credentials, then lists unchecked manual items from [`TODO.md`](TODO.md).

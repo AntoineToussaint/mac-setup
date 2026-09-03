@@ -1,0 +1,12 @@
+# Setappfile — Setapp apps installed on this Mac.
+#
+# Regenerate:  setapp-sync export
+# Restore:     setapp-sync install   (needs Setapp installed and signed in)
+#
+# name<TAB>slug<TAB>app_id<TAB>bundle_id
+# app_id is the UUID the setapp://install deeplink wants — see bin/setapp-sync.
+
+CleanShot X	cleanshot	5A3D5B98-F3EC-4A98-B140-652B6B1AAE62	com.getcleanshot.app-setapp
+In Your Face	in-your-face	E32350E9-5B95-41C5-B752-EB71F1509072	com.bluebanana-software.inyourface-setapp
+iStat Menus	istat-menus	B5F372C3-5874-45E5-8B43-998BF4BE3B8E	com.bjango.istatmenus-setapp
+Marked	marked	85361058-3F1F-4FC3-992D-2D446D3B6111	com.brettterpstra.marked-setapp

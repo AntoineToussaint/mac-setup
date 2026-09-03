@@ -170,6 +170,7 @@ cask "spotify"       # music
 
 # Get from Setapp (already in your subscription — do NOT brew):
 #   CleanShot X · Bartender · CleanMyMac · Gifox · Sip
+# The installed set is tracked in ./Setappfile — restore it with `setapp-sync install`.
 
 # ---------- Security ----------
 # cask "lulu"         # free outbound firewall (Objective-See)

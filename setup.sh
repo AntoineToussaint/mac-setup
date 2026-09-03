@@ -197,6 +197,7 @@ link "$DOTS/completions/_shell-coach" "$HOME/.config/zsh/completions/_shell-coac
 link "$DIR/bin/shell-coach" "$HOME/.local/bin/shell-coach"
 link "$DIR/bin/devtunnel"   "$HOME/.local/bin/devtunnel"
 link "$DIR/bin/devtunnel-guard" "$HOME/.local/bin/devtunnel-guard"
+link "$DIR/bin/setapp-sync" "$HOME/.local/bin/setapp-sync"
 link "$DOTS/starship.toml"  "$HOME/.config/starship.toml"
 link "$DOTS/ghostty-config" "$HOME/.config/ghostty/config"
 link "$DOTS/gitconfig"      "$HOME/.gitconfig"
@@ -491,6 +492,25 @@ if [ -d "/Applications/Raycast.app" ] && [ -n "$RAYCAST_CONFIG" ] && [ ! -e "$RA
     echo "  Raycast is showing the import dialog: enter the export passphrase,"
     echo "  then tick at least 'Extensions installed from the Store'."
     echo "  Delete $RAYCAST_STAMP to be offered this again."
+  fi
+fi
+
+# Setapp apps: the subscription is not visible to `brew bundle`, but the tracked
+# Setappfile lists what you had installed, and bin/setapp-sync replays it via the
+# SetappAgent's `setapp://install?app_id=<UUID>` deeplink (see that script for
+# how the UUIDs are recovered). Setapp confirms each install with a panel, so
+# this is offered rather than run silently. The probe is real state — the
+# bundle ids under /Applications/Setapp — so there is no stamp file to stale.
+if [ -d "/Applications/Setapp.app" ] && [ -f "$DIR/Setappfile" ]; then
+  SETAPP_MISSING="$("$DIR/bin/setapp-sync" install --dry-run 2>/dev/null | grep -c 'setapp://' || true)"
+  if [ "${SETAPP_MISSING:-0}" -gt 0 ]; then
+    log "Setapp apps"
+    "$DIR/bin/setapp-sync" install --dry-run | sed 's/^/  /'
+    if ask "Install the $SETAPP_MISSING missing Setapp app(s) now?"; then
+      "$DIR/bin/setapp-sync" install
+    else
+      echo "  Later:  setapp-sync install"
+    fi
   fi
 fi
 
