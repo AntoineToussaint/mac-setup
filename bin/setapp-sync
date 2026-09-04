@@ -3,19 +3,27 @@
 # reinstall them on a fresh Mac.
 #
 #   setapp-sync export           # write ~/mac-setup/Setappfile from this Mac
-#   setapp-sync list             # show what the Setappfile would install
+#   setapp-sync list             # show what the Setappfile holds, with categories
+#   setapp-sync list --missing   # ...only the apps not installed here
 #   setapp-sync install          # install what is missing, asking about each app
 #   setapp-sync install -y       # ...without asking
 #   setapp-sync install -n       # ...print the deeplinks instead of firing them
 #   setapp-sync export --prune   # ...and forget the wanted list
 #
 # Setapp ships no CLI and `brew bundle` cannot see inside a subscription, but
-# two undocumented pieces make this work:
+# three undocumented pieces make this work:
 #
 #   1) The desktop client caches the whole catalogue in a Core Data store at
 #      ~/Library/Application Support/Setapp/Default/Databases/Apps.sqlite.
 #      ZAPP maps a bundle identifier to the app's public UUID (ZPUBLICID).
-#   2) The SetappAgent registers the `setapp:` URL scheme, and its
+#   2) Each app's one-line tagline (ZTAGLINE) and its category — the top-level
+#      one from the ZSETAPPCATEGORY many-to-many, plus the finer ZCATEGORYFILTER
+#      name — are baked into the Setappfile by `export`, so `install` can say
+#      what an app is without the catalogue being present. They are a nicety:
+#      the join-table column names carry Core Data entity numbers that can shift
+#      between Setapp versions, so a failed lookup leaves them empty rather than
+#      failing the export.
+#   3) The SetappAgent registers the `setapp:` URL scheme, and its
 #      InstallAppFromURL handler accepts `setapp://install?app_id=<UUID>` — the
 #      dashed, uppercase form of that same ZPUBLICID. Anything else (numeric
 #      ZIDENTIFIER, app_name=, a `launch` host) is rejected as "not a valid
@@ -27,6 +35,9 @@
 # The UUIDs are baked into the Setappfile, so restoring does NOT depend on the
 # catalogue cache being populated yet on the new Mac — only on Setapp being
 # installed and signed in.
+#
+# Rows are `name<TAB>slug<TAB>app_id<TAB>bundle_id<TAB>category<TAB>tagline`; the
+# last two are optional, so a hand-written 4-column row still works.
 #
 # The Setappfile has two sections. "installed" is regenerated from this Mac on
 # every `export`. "wanted" is a wishlist — apps you have decided on but have not
@@ -85,7 +96,37 @@ app_path_for() {
   return 1
 }
 
-# read_manifest — emit `name<TAB>slug<TAB>uuid<TAB>bundle_id`, comments stripped
+# catalog_meta DB BUNDLE_ID — emit `category<TAB>tagline`, either may be empty.
+# Only `export` calls this; see the note at the top about why a miss is not fatal.
+catalog_meta() {
+  local db="$1" bid top sub tag cat
+  bid="$(printf '%s' "$2" | sed "s/'/''/g")"
+  top="$(sqlite3 "$db" "
+    SELECT c.ZLOCALIZEDNAME FROM ZAPP a
+      JOIN Z_1SETAPPCATEGORIES j ON j.Z_1APPLICATIONS = a.Z_PK
+      JOIN ZSETAPPCATEGORY c ON c.Z_PK = j.Z_20SETAPPCATEGORIES
+     WHERE a.ZBUNDLEIDENTIFIER = '$bid' ORDER BY c.ZPOSITION LIMIT 1;" 2>/dev/null || true)"
+  # ZJOINEDFILTERS is a comma-joined list of ZCATEGORYFILTER identifiers; the
+  # first one is the app's own shelf ("Web Development", "Menu Bar", ...).
+  sub="$(sqlite3 "$db" "
+    SELECT f.ZNAME FROM ZAPP a
+      JOIN ZCATEGORYFILTER f
+        ON f.ZIDENTIFIER = CAST(substr(a.ZJOINEDFILTERS || ',', 1,
+                                       instr(a.ZJOINEDFILTERS || ',', ',') - 1) AS INTEGER)
+     WHERE a.ZBUNDLEIDENTIFIER = '$bid' LIMIT 1;" 2>/dev/null || true)"
+  tag="$(sqlite3 "$db" "
+    SELECT ZTAGLINE FROM ZAPP
+     WHERE ZBUNDLEIDENTIFIER = '$bid' AND ZTAGLINE IS NOT NULL LIMIT 1;" 2>/dev/null || true)"
+  cat="$top"
+  if [ -n "$sub" ]; then
+    if [ -n "$cat" ]; then cat="$cat / $sub"; else cat="$sub"; fi
+  fi
+  # Tabs and newlines would corrupt the manifest row.
+  printf '%s\t%s\n' "$(printf '%s' "$cat" | tr -d '\t\n')" "$(printf '%s' "$tag" | tr -d '\t\n')"
+}
+
+# read_manifest — emit `name<TAB>slug<TAB>uuid<TAB>bundle_id[<TAB>category<TAB>tagline]`,
+# comments stripped
 read_manifest() {
   [ -f "$MANIFEST" ] || die "no manifest at $MANIFEST — run: setapp-sync export"
   grep -v '^[[:space:]]*#' "$MANIFEST" | grep -v '^[[:space:]]*$'
@@ -123,7 +164,7 @@ cmd_export() {
         AND ZPUBLICID IS NOT NULL
       LIMIT 1;")"
     if [ -n "$row" ]; then
-      rows+="$row"$'\n'
+      rows+="$row"$'\t'"$(catalog_meta "$tmp/Apps.sqlite" "$id")"$'\n'
     else
       missing+="  $id"$'\n'
     fi
@@ -137,11 +178,15 @@ cmd_export() {
   # way to actually forget one.
   local wanted=''
   if [ "$prune" -eq 0 ] && [ -f "$MANIFEST" ]; then
-    local w_name w_slug w_uuid w_bid
-    while IFS=$'\t' read -r w_name w_slug w_uuid w_bid; do
+    local w_name w_slug w_uuid w_bid w_cat w_tag w_meta
+    while IFS=$'\t' read -r w_name w_slug w_uuid w_bid w_cat w_tag; do
       [ -n "${w_bid:-}" ] || continue
       grep -qxF "$w_bid" <<< "$ids" && continue
-      wanted+="$w_name"$'\t'"$w_slug"$'\t'"$w_uuid"$'\t'"$w_bid"$'\n'
+      # Refresh the description from the catalogue — a hand-added pick arrives
+      # without one — but keep what the row already had if the lookup misses.
+      w_meta="$(catalog_meta "$tmp/Apps.sqlite" "$w_bid")"
+      if [ "$w_meta" = $'\t' ]; then w_meta="${w_cat:-}"$'\t'"${w_tag:-}"; fi
+      wanted+="$w_name"$'\t'"$w_slug"$'\t'"$w_uuid"$'\t'"$w_bid"$'\t'"$w_meta"$'\n'
     done < <(grep -v '^[[:space:]]*#' "$MANIFEST" | grep -v '^[[:space:]]*$')
   fi
 
@@ -151,7 +196,7 @@ cmd_export() {
     echo "# Regenerate:  setapp-sync export        (--prune to forget the wanted list)"
     echo "# Restore:     setapp-sync install       (needs Setapp installed and signed in)"
     echo "#"
-    echo "# name<TAB>slug<TAB>app_id<TAB>bundle_id"
+    echo "# name<TAB>slug<TAB>app_id<TAB>bundle_id<TAB>category<TAB>tagline"
     echo "# app_id is the UUID the setapp://install deeplink wants — see bin/setapp-sync."
     echo
     echo "# --- installed on this Mac (regenerated on every export) ---"
@@ -174,11 +219,25 @@ cmd_export() {
 
 # ------------------------------------------------------------------ list ----
 cmd_list() {
+  local only_missing=0
+  case "${1:-}" in
+    --missing) only_missing=1 ;;
+    '') ;;
+    *) warn "unknown flag for list: $1"; usage 1 ;;
+  esac
+
   local installed; installed="$(installed_bundle_ids)"
-  local name slug uuid bid mark
-  while IFS=$'\t' read -r name slug uuid bid; do
-    if grep -qxF "$bid" <<< "$installed"; then mark="✓"; else mark=" "; fi
-    printf '%s %-28s %s\n' "$mark" "$name" "setapp://install?app_id=$uuid"
+  local name slug uuid bid cat tag mark
+  while IFS=$'\t' read -r name slug uuid bid cat tag; do
+    [ -n "${bid:-}" ] || continue
+    if grep -qxF "$bid" <<< "$installed"; then
+      [ "$only_missing" -eq 1 ] && continue
+      mark="✓"
+    else
+      mark=" "
+    fi
+    printf '%s %-28s \033[2m%s\033[0m\n' "$mark" "$name" "${cat:-—}"
+    [ -n "${tag:-}" ] && printf '      %s\n' "$tag"
   done < <(read_manifest)
 }
 
@@ -199,6 +258,14 @@ prompt() {
   printf "\033[1;36m??\033[0m %s [%s] " "$1" "$2" > /dev/tty
   IFS= read -r reply < /dev/tty || { printf '\n' > /dev/tty; reply=q; }
   printf '%s' "$reply"
+}
+
+# describe_app NAME CATEGORY TAGLINE — the "what is this?" shown before asking
+describe_app() {
+  printf '\n\033[1m%s\033[0m' "$1"
+  if [ -n "${2:-}" ]; then printf '  \033[2m·  %s\033[0m' "$2"; fi
+  printf '\n'
+  if [ -n "${3:-}" ]; then printf '  %s\n' "$3"; fi
 }
 
 # ask_app NAME — 0 install, 1 skip, 2 stop here
@@ -258,8 +325,8 @@ cmd_install() {
   local rows; rows="$(read_manifest)"
 
   local installed; installed="$(installed_bundle_ids)"
-  local name slug uuid bid reply rc n_done=0 n_skip=0 n_miss=0
-  while IFS=$'\t' read -r name slug uuid bid; do
+  local name slug uuid bid cat tag reply rc n_done=0 n_skip=0 n_miss=0
+  while IFS=$'\t' read -r name slug uuid bid cat tag; do
     [ -n "${bid:-}" ] || continue
     if grep -qxF "$bid" <<< "$installed"; then
       printf '  %-28s already installed\n' "$name"
@@ -270,6 +337,7 @@ cmd_install() {
       continue
     fi
 
+    describe_app "$name" "${cat:-}" "${tag:-}"
     rc=0; ask_app "$name" || rc=$?
     case "$rc" in
       1) printf '  %-28s skipped\n' "$name"; n_skip=$((n_skip + 1)); continue ;;

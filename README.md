@@ -105,7 +105,8 @@ this one is fully scriptable, via [`Setappfile`](Setappfile) and
 
 ```bash
 setapp-sync export        # refresh Setappfile from what is installed here
-setapp-sync list          # what the Setappfile holds, ✓ = already installed
+setapp-sync list          # what the Setappfile holds — category, tagline, ✓ = installed
+setapp-sync list --missing # ...only what is not installed here
 setapp-sync install       # walk the missing apps, asking Y/n/a/q for each
 setapp-sync install -y    # ...without asking
 setapp-sync install -n    # ...dry run: print the deeplinks instead
@@ -117,12 +118,23 @@ every `export`. **wanted** is a wishlist — apps chosen but not installed here 
 and `export` carries it forward instead of dropping it, so hand-added picks
 survive a re-export. An app moves from *wanted* to *installed* on its own once it
 is actually on the machine and you re-export. `install` fetches both sections.
+Rows are `name⇥slug⇥app_id⇥bundle_id⇥category⇥tagline`; the last two are
+optional, so a row added by hand with just the first four still works.
 
 Installs are paced one app at a time, on purpose: Setapp puts up its own
 confirmation panel per app and drops any deeplink fired while another install is
-in flight. So `install` asks before each app (`y` install · `n` skip · `a` do the
-rest without asking · `q` stop), fires the deeplink only then, and does not ask
-about the next app until that bundle has landed and stopped growing. `q` and a
+in flight. So `install` asks before each app — printing its category and
+one-line tagline first, since 30-odd names go by fast — and fires the deeplink
+only then:
+
+```
+Bartender Pro  ·  Optimize / Menu Bar & Dock
+  Clean up and superpower your menu bar
+?? Install Bartender Pro? [Y/n/a/q]
+```
+
+`y` installs · `n` skips · `a` does the rest without asking · `q` stops. It does
+not ask about the next app until that bundle has landed and stopped growing. `q` and a
 skipped app are both safe — re-run `install` and it picks up whatever is still
 missing.
 
@@ -130,7 +142,7 @@ missing.
 that are not on the machine. Setapp must be installed (`cask "setapp"` is in the
 [`Brewfile`](Brewfile)) and **signed in** first.
 
-Two undocumented pieces make it work:
+Three undocumented pieces make it work:
 
 1. The desktop client caches the whole catalogue in a Core Data store at
    `~/Library/Application Support/Setapp/Default/Databases/Apps.sqlite`. Its
@@ -138,7 +150,14 @@ Two undocumented pieces make it work:
    a raw 16-byte blob). `export` reads a copy of the database — it is open in WAL
    mode, so the `-wal` file has to come along — and joins it against the bundle
    ids actually present under `/Applications/Setapp/`.
-2. `SetappAgent` registers the `setapp:` URL scheme, and its `InstallAppFromURL`
+2. The same `ZAPP` row carries a one-line `ZTAGLINE`, plus a category — the
+   top-level one (*Develop*, *Optimize*, *Work*, *Create*) from a Core Data
+   many-to-many, and the finer `ZCATEGORYFILTER` shelf (*Web Development*,
+   *Menu Bar & Dock*, …) referenced by id in `ZJOINEDFILTERS`. `export` bakes
+   both into `Setappfile` so `install` can describe an app without the
+   catalogue. Those join tables carry Core Data entity numbers that may shift
+   between Setapp releases, so a failed lookup just leaves the columns empty.
+3. `SetappAgent` registers the `setapp:` URL scheme, and its `InstallAppFromURL`
    handler accepts `setapp://install?app_id=<UUID>` — the dashed, uppercase form
    of that same `ZPUBLICID`. Nothing else is accepted: the numeric
    `ZIDENTIFIER`, `app_name=`, and a `launch` host are all logged as *"URL is not

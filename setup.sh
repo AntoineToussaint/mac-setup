@@ -506,7 +506,7 @@ if [ -d "/Applications/Setapp.app" ] && [ -f "$DIR/Setappfile" ]; then
   SETAPP_MISSING="$("$DIR/bin/setapp-sync" install --dry-run 2>/dev/null | grep -c 'setapp://' || true)"
   if [ "${SETAPP_MISSING:-0}" -gt 0 ]; then
     log "Setapp apps"
-    "$DIR/bin/setapp-sync" install --dry-run | sed 's/^/  /'
+    "$DIR/bin/setapp-sync" list --missing | sed 's/^/  /'
     if ask "Go through the $SETAPP_MISSING missing Setapp app(s) now? (asks per app)"; then
       if [ "$ASSUME_YES" -eq 1 ]; then
         "$DIR/bin/setapp-sync" install --yes
