@@ -498,16 +498,21 @@ fi
 # Setapp apps: the subscription is not visible to `brew bundle`, but the tracked
 # Setappfile lists what you had installed, and bin/setapp-sync replays it via the
 # SetappAgent's `setapp://install?app_id=<UUID>` deeplink (see that script for
-# how the UUIDs are recovered). Setapp confirms each install with a panel, so
-# this is offered rather than run silently. The probe is real state — the
-# bundle ids under /Applications/Setapp — so there is no stamp file to stale.
+# how the UUIDs are recovered). Setapp confirms each install with its own panel
+# and only handles one at a time, so setapp-sync asks per app and waits for each
+# download; this is just the gate into that walkthrough. The probe is real
+# state — the bundle ids under /Applications/Setapp — so nothing goes stale.
 if [ -d "/Applications/Setapp.app" ] && [ -f "$DIR/Setappfile" ]; then
   SETAPP_MISSING="$("$DIR/bin/setapp-sync" install --dry-run 2>/dev/null | grep -c 'setapp://' || true)"
   if [ "${SETAPP_MISSING:-0}" -gt 0 ]; then
     log "Setapp apps"
     "$DIR/bin/setapp-sync" install --dry-run | sed 's/^/  /'
-    if ask "Install the $SETAPP_MISSING missing Setapp app(s) now?"; then
-      "$DIR/bin/setapp-sync" install
+    if ask "Go through the $SETAPP_MISSING missing Setapp app(s) now? (asks per app)"; then
+      if [ "$ASSUME_YES" -eq 1 ]; then
+        "$DIR/bin/setapp-sync" install --yes
+      else
+        "$DIR/bin/setapp-sync" install
+      fi
     else
       echo "  Later:  setapp-sync install"
     fi

@@ -106,7 +106,8 @@ this one is fully scriptable, via [`Setappfile`](Setappfile) and
 ```bash
 setapp-sync export        # refresh Setappfile from what is installed here
 setapp-sync list          # what the Setappfile holds, ✓ = already installed
-setapp-sync install       # install everything missing (confirm each panel)
+setapp-sync install       # walk the missing apps, asking Y/n/a/q for each
+setapp-sync install -y    # ...without asking
 setapp-sync install -n    # ...dry run: print the deeplinks instead
 setapp-sync export --prune # ...and forget the wanted list
 ```
@@ -117,8 +118,16 @@ and `export` carries it forward instead of dropping it, so hand-added picks
 survive a re-export. An app moves from *wanted* to *installed* on its own once it
 is actually on the machine and you re-export. `install` fetches both sections.
 
-`setup.sh` offers `install` automatically when `Setappfile` lists apps that are
-not on the machine. Setapp must be installed (`cask "setapp"` is in the
+Installs are paced one app at a time, on purpose: Setapp puts up its own
+confirmation panel per app and drops any deeplink fired while another install is
+in flight. So `install` asks before each app (`y` install · `n` skip · `a` do the
+rest without asking · `q` stop), fires the deeplink only then, and does not ask
+about the next app until that bundle has landed and stopped growing. `q` and a
+skipped app are both safe — re-run `install` and it picks up whatever is still
+missing.
+
+`setup.sh` offers this walkthrough automatically when `Setappfile` lists apps
+that are not on the machine. Setapp must be installed (`cask "setapp"` is in the
 [`Brewfile`](Brewfile)) and **signed in** first.
 
 Two undocumented pieces make it work:
@@ -135,7 +144,10 @@ Two undocumented pieces make it work:
    `ZIDENTIFIER`, `app_name=`, and a `launch` host are all logged as *"URL is not
    a valid install-from-URL link"*. The agent also refuses to start a second
    install while one is running, so `install` fires one deeplink at a time and
-   waits for the bundle to appear (`SETAPP_INSTALL_TIMEOUT`, default 600s).
+   waits for the bundle to appear *and stop growing* — the bundle shows up part
+   way through the download, so presence alone is not "done". If nothing lands
+   within `SETAPP_INSTALL_TIMEOUT` (default 300s) it asks whether to keep
+   waiting, skip that app, or stop.
 
 Because the UUIDs are written into `Setappfile`, restoring does **not** depend
 on the catalogue cache being populated on the new Mac. The file is a plain
