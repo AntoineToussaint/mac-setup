@@ -162,6 +162,7 @@ cask "1password-cli" # `op` CLI — secrets in scripts, git signing, ssh agent
 cask "obsidian"      # local markdown notes
 cask "notion"        # workspace / docs (cloud counterpart to obsidian's local notes)
 cask "notion-calendar" # calendar client (the app formerly known as Cron)
+cask "fellow"        # meeting agendas / notes / action items, tied to the calendar
 cask "linear"        # issue tracker desktop app (schpet/tap/linear above is the CLI)
 cask "stats"         # menu-bar system monitor
 cask "slack"         # team chat
