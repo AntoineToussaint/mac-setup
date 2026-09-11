@@ -244,6 +244,55 @@ fi
 section "Nix"
 check "nix on PATH" command -v nix
 
+# ---------- Kubernetes / cloud auth -------------------------------------------
+# kubectl auth plugins fail LATE and cryptically: the kubeconfig names an exec
+# plugin, and a missing binary surfaces as "Unable to connect to the server:
+# getting credentials: exec: executable ... not found" mid-incident. They are
+# also easy to get wrong — homebrew-core's `kubelogin` installs
+# `kubectl-oidc_login`, NOT `kubelogin` (that one is Azure's, in its own tap),
+# so "brew says kubelogin is installed" and "kubelogin is on PATH" are
+# different facts.
+#
+# Check the plugins THIS kubeconfig actually names rather than a fixed wish
+# list: a laptop with only AKS clusters should not be nagged about GKE.
+section "Kubernetes & cloud auth"
+if command -v kubectl >/dev/null 2>&1; then
+  ok "kubectl on PATH ($(command -v kubectl))"
+  KCFG="${KUBECONFIG:-$HOME/.kube/config}"
+  if [ ! -f "$KCFG" ]; then
+    ok "no kubeconfig at $KCFG — nothing to check"
+  else
+    # `command:` is the binary kubectl forks; it follows `exec:` in each user.
+    plugins="$(awk '/^ *exec:/{e=1} e && /^ *command:/{print $2; e=0}' "$KCFG" | sort -u)"
+    if [ -z "$plugins" ]; then
+      ok "kubeconfig uses no exec auth plugins"
+    fi
+    for bin in $plugins; do
+      if command -v "$bin" >/dev/null 2>&1; then
+        ok "auth plugin $bin available ($(command -v "$bin"))"
+      else
+        case "$bin" in
+          kubelogin)   hint="brew install Azure/kubelogin/kubelogin (AKS/Entra — NOT core's kubelogin)" ;;
+          kubectl-oidc_login) hint="brew install kubelogin (int128, generic OIDC)" ;;
+          gke-gcloud-auth-plugin) hint="gcloud components install gke-gcloud-auth-plugin" ;;
+          *)           hint="install it and re-run" ;;
+        esac
+        bad "auth plugin $bin MISSING but your kubeconfig requires it — $hint"
+      fi
+    done
+  fi
+else
+  warn "kubectl not on PATH"
+fi
+# A hand-installed copy alongside the managed one is how you end up running a
+# version brew will never update. Only flag a real duplicate.
+for bin in kubectl kubelogin kubectl-oidc_login helm; do
+  n="$(command -v -a "$bin" 2>/dev/null | sort -u | wc -l | tr -d ' ')"
+  if [ "${n:-0}" -gt 1 ]; then
+    warn "$bin resolves to $n copies on PATH — $(command -v -a "$bin" | tr '\n' ' ')"
+  fi
+done
+
 # ---------- Git & credentials -------------------------------------------------
 section "Git & credentials"
 check "gh authenticated" gh auth status

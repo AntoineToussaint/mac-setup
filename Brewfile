@@ -242,8 +242,18 @@ cask "gcloud-cli"   # Google Cloud CLI — `gcloud`, `gsutil`, `bq` (was google-
                     # gke-gcloud-auth-plugin` (not a brew package). EKS auth is native to awscli.
 brew "azure-cli"    # Azure CLI — `az`. Bicep (Azure's IaC DSL) isn't a brew package either:
                     # run `az bicep install` once az is set up.
-brew "kubelogin"    # AKS auth plugin — kubectl needs this for Azure AD/Entra ID login,
-                    # same role gke-gcloud-auth-plugin plays for GKE.
+# Two DIFFERENT tools are both called "kubelogin", and the confusion is a real
+# trap: homebrew-core's `kubelogin` is int128's OIDC plugin, and it does NOT
+# install a `kubelogin` binary at all — its executable is `kubectl-oidc_login`
+# (used as `kubectl oidc-login`, or as an exec plugin with
+# `command: kubectl` / `args: [oidc-login, get-token]`). Azure's AKS/Entra ID
+# plugin is a separate tap and IS the binary named `kubelogin`. Install both;
+# they don't collide. Sorted by which cluster you're hitting:
+brew "kubelogin"                    # int128 — generic OIDC (Dex/Keycloak/Okta/Google)
+brew "Azure/kubelogin/kubelogin"    # Azure — AKS with Entra ID; the `kubelogin` binary.
+                    # GKE's equivalent is gke-gcloud-auth-plugin, a gcloud
+                    # component rather than a formula (see the gcloud-cli note
+                    # above); doctor.sh checks all three resolve.
 brew "azcopy"       # fast Azure Blob/Files transfer CLI (az storage commands are slow for bulk data)
 brew "sops"         # encrypt secrets in git (used with kustomize/helm in GitOps flows)
 brew "opentofu"     # IaC for provisioning the AWS/GCP infra itself (FOSS terraform fork —
