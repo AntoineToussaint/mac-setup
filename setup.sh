@@ -415,6 +415,11 @@ fi
 
 log "Installing selected language runtimes via mise"
 eval "$(mise activate bash)"
+# AFTER the activation: mise points GOBIN at the active toolchain's bin dir, so
+# `go install` would drop air in a path that moves on every Go release and leave
+# ~/go/bin — which zshenv puts on PATH — empty. zshenv pins it; so do we.
+export GOBIN="$HOME/go/bin"
+mkdir -p "$HOME/go/bin"
 if [ "$WANT_PYTHON" -eq 1 ]; then
   # Use precompiled Python (astral python-build-standalone) instead of compiling
   # from source — faster, and avoids the pyenv git-clone step that fails on a
