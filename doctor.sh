@@ -320,10 +320,42 @@ if [ -n "$(git config --global --includes user.email 2>/dev/null)" ]; then
 else
   bad "git identity missing — run: bash setup.sh --reconfigure"
 fi
-case "$(git config --global --includes gpg.ssh.program 2>/dev/null)" in
-  *op-ssh-sign*) ok "commit signing via 1Password (op-ssh-sign)" ;;
-  *) warn "op-ssh-sign not configured in gitconfig" ;;
-esac
+# Report what is set rather than pushing anyone towards 1Password, which nobody
+# here uses. What matters is signing switched ON that cannot work.
+SIGN_KEY="$(git config --global --includes user.signingkey 2>/dev/null || true)"
+if [ "$(git config --global --includes commit.gpgsign 2>/dev/null)" != "true" ]; then
+  ok "commit signing off (fine — Obin does not use 1Password)"
+elif [ -z "$SIGN_KEY" ]; then
+  bad "commit signing is ON with no signing key — every commit will fail; bash setup.sh --reconfigure"
+elif case "$SIGN_KEY" in ssh-*) true ;; *) false ;; esac; then
+  ok "commit signing on (inline public key)"
+elif [ -r "${SIGN_KEY/#\~/$HOME}" ]; then
+  ok "commit signing on ($SIGN_KEY)"
+else
+  bad "commit signing is ON but the key $SIGN_KEY does not exist — every commit will fail"
+fi
+
+# The key existing is only half of it: with gpg.ssh.program set, git hands every
+# signature to that binary. 1Password signs through its agent socket, so
+# op-ssh-sign fails when the agent is off — and names itself, not git, so it
+# reads like an unrelated app problem. Probe the socket; signing something for
+# real would pop biometrics on a read-only check.
+if [ "$(git config --global --includes commit.gpgsign 2>/dev/null)" = "true" ]; then
+  SIGN_PROG="$(git config --global --includes gpg.ssh.program 2>/dev/null || true)"
+  if [ -z "$SIGN_PROG" ]; then
+    :   # no external signer: git uses ssh-keygen, covered above
+  elif [ ! -x "$SIGN_PROG" ]; then
+    bad "commit signing calls $SIGN_PROG, which is not installed — every commit will fail"
+  elif case "$SIGN_PROG" in *op-ssh-sign) true ;; *) false ;; esac; then
+    if [ -n "$(find "$HOME/Library/Group Containers" -name agent.sock 2>/dev/null | head -1)" ]; then
+      ok "commit signing via 1Password (agent socket present)"
+    else
+      bad "commit signing calls op-ssh-sign but 1Password's SSH agent is not running — every commit fails with 'Could not connect to socket'. Turn it on in 1Password > Developer, or drop the signer: git config --file ~/.config/git/identity --unset gpg.ssh.program"
+    fi
+  else
+    ok "commit signing via $SIGN_PROG"
+  fi
+fi
 
 # ---------- Summary -----------------------------------------------------------
 printf "\n\033[1m%d passed, %d warnings, %d failed\033[0m\n" "$PASS" "$WARN" "$FAIL"

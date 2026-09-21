@@ -55,7 +55,8 @@ What it does:
 2. **Dotfiles** — symlinks `dotfiles/*` into `~` (existing real files are backed up to `*.bak-<timestamp>`).
    Your git identity is *not* in the tracked `dotfiles/gitconfig` — it asks once and writes
    `~/.config/git/identity`, which that file `[include]`s. Change it with `--reconfigure`.
-   Commit signing is only switched on if you ask for it and 1Password's `op-ssh-sign` is present.
+   Commit signing is **off by default** — Obin does not use 1Password, so a new hire has no key
+   in it, and switching it on without one makes every commit fail.
 3. **Runtimes** — installs and upgrades node/python/go/rust via [mise](https://mise.jdx.dev), plus rustup components and Go's `air`.
 4. **Nix** — Determinate Systems installer / upgrade (not via Homebrew).
 5. **Security** — runs [`security.sh`](security.sh): firewall + stealth, auto-updates, npm `ignore-scripts`, Touch ID for sudo (skip with `--no-security`).
