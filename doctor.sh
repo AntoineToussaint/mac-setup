@@ -138,6 +138,16 @@ if EPHEMERAL=$(grep -rlE '/private/tmp/|/var/folders/|/scratchpad/' "$DOTS" 2>/d
 else
   ok "no ephemeral sandbox paths leaked into dotfiles"
 fi
+# Same class as the sandbox paths above. git punishes it hardest: a signingkey
+# under /Users/<someone> breaks every commit, and a value below the [include]
+# overrides the personal file, so the victim cannot fix it on their side.
+if LEAKED=$(grep -rlE '/Users/[^/]+/' "$DOTS" "$DIR/bin" 2>/dev/null); then
+  for f in $LEAKED; do
+    bad "$f hardcodes a path under a specific user's home — use \$HOME; git diff and fix"
+  done
+else
+  ok "no hardcoded home directories in dotfiles or bin"
+fi
 check "zsh startup files parse" zsh -n \
   "$DOTS/zshenv" "$DOTS/zprofile" "$DOTS/zshrc" "$DOTS/shortcuts.zsh" \
   "$DOTS/completions/_shell-coach" "$DIR/bin/shell-coach" "$DIR/bin/devtunnel"
