@@ -10,6 +10,8 @@ cask "font-caskaydia-cove-nerd-font"    # Cascadia Code — MS's editor font, li
 cask "font-monaspice-nerd-font"         # GitHub Monaspace — modern, texture healing
 brew "starship"                         # cross-shell prompt (Rust, actively maintained)
 brew "antidote"                         # zsh plugin manager (loads ~/.zsh_plugins.txt)
+brew "bash"                             # bash 5 — macOS ships 3.2, which rejects fractional
+                                        # `read -t`. setup.sh re-execs under this one.
 # NOTE: zsh-autosuggestions / zsh-syntax-highlighting / OMZ git plugin are now
 # managed by antidote via ~/.zsh_plugins.txt, not installed as brew formulae.
 
