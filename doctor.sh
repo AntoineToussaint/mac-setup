@@ -242,7 +242,16 @@ else
 fi
 
 section "Nix"
-check "nix on PATH" command -v nix
+# Installed, not on-PATH: doctor is non-interactive bash and cannot inherit a
+# PATH that did not exist when it started, so on the run that installs Nix a
+# PATH-only test is a false failure. A new terminal sorts the PATH out.
+if command -v nix >/dev/null 2>&1; then
+  ok "nix on PATH ($(nix --version 2>/dev/null | head -1))"
+elif [ -x /nix/var/nix/profiles/default/bin/nix ]; then
+  ok "nix installed ($(/nix/var/nix/profiles/default/bin/nix --version 2>/dev/null | head -1)) — not on this shell's PATH yet; a new terminal picks it up"
+else
+  bad "nix not installed — re-run setup.sh"
+fi
 
 # ---------- Kubernetes / cloud auth -------------------------------------------
 # kubectl auth plugins fail LATE and cryptically: the kubeconfig names an exec
