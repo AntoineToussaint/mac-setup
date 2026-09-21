@@ -446,7 +446,11 @@ if [ "$WANT_GO" -eq 1 ]; then
   # Lands in $(go env GOPATH)/bin = ~/go/bin, which zshenv adds to PATH.
   if command -v go >/dev/null 2>&1; then
     log "Installing Go tools via go install (air — live reload)"
-    go install github.com/air-verse/air@latest
+    # The one unguarded network call: no "already present" skip, so it re-fetches
+    # every run, and a proxy.golang.org blip would abort the script before Nix,
+    # the hardening and doctor.
+    retry 3 go install github.com/air-verse/air@latest \
+      || log "air install failed — install later: go install github.com/air-verse/air@latest"
   fi
 fi
 
