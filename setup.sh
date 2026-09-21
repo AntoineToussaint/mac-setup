@@ -98,6 +98,16 @@ ask() { # ask "Question?" — yes/no prompt, default yes. Auto-yes with --yes or
     *) return 0 ;;
   esac
 }
+ask_no() { # ask_no "Question?" — yes/no prompt, default NO. Never auto-yes: an
+  # unattended run must not opt into what the interactive default declines.
+  if [ ! -t 0 ]; then return 1; fi
+  local reply
+  read_line reply "$(printf "\033[1;36m??\033[0m %s [y/N] " "$*")"
+  case "$reply" in
+    [yY]|[yY][eE][sS]) return 0 ;;
+    *) return 1 ;;
+  esac
+}
 retry() { # retry <n> <cmd...> — re-run a flaky (usually network) command with backoff
   local n="$1"; shift
   local i=1
@@ -125,7 +135,11 @@ write_identity() { # write_identity FILE NAME EMAIL SIGNKEY SIGNPROG — emit a 
       echo "[gpg]"
       echo "	format = ssh"
       echo '[gpg "ssh"]'
-      printf "\tprogram = %s\n" "$signprog"
+      # Only with an external signer. A plain SSH key needs none — git signs with
+      # ssh-keygen — and naming one that cannot reach the key breaks commits.
+      if [ -n "$signprog" ]; then
+        printf "\tprogram = %s\n" "$signprog"
+      fi
       echo "	allowedSignersFile = ~/.ssh/allowed_signers"
       echo "[commit]"
       echo "	gpgsign = true"
@@ -295,12 +309,14 @@ if [ "$RECONFIGURE" -eq 1 ] || [ ! -f "$GIT_IDENTITY" ]; then
     GIT_EMAIL="${GIT_EMAIL:-$CUR_EMAIL}"
   fi
 
-  # Commit signing is opt-in: gpgsign=true with no signing key makes EVERY commit
-  # fail, so it can only be switched on once we know op-ssh-sign and a key exist.
+  # Opt-in, defaulting to NO. Obin does not use 1Password, but the Brewfile
+  # installs it, so op-ssh-sign exists on every machine and this was asked with
+  # "yes" pre-selected. Saying yes without a key in 1Password writes gpgsign=true
+  # plus a dead path, and every commit then fails.
   OP_SSH_SIGN="/Applications/1Password.app/Contents/MacOS/op-ssh-sign"
   GIT_SIGNKEY=""
   if [ -x "$OP_SSH_SIGN" ] && [ -t 0 ] && [ "$ASSUME_YES" -eq 0 ]; then
-    if ask "Sign commits with your 1Password SSH key (shows 'Verified' on GitHub)?"; then
+    if ask_no "Sign commits with a 1Password SSH key? (not used at Obin — needs a key already in your 1Password)"; then
       read_line GIT_SIGNKEY "$(printf "\033[1;36m??\033[0m Public signing key (ssh-ed25519 AAAA…)%s: " "${CUR_KEY:+ [keep current]}")"
       GIT_SIGNKEY="${GIT_SIGNKEY:-$CUR_KEY}"
     fi
@@ -336,7 +352,7 @@ if [ "$RECONFIGURE" -eq 1 ] || [ ! -f "$GIT_IDENTITY" ]; then
       log "No personal email entered — skipping personal identity (its whole point is a different email)"
     else
       P_SIGNKEY=""
-      if [ -x "$OP_SSH_SIGN" ] && ask "Sign personal commits with a 1Password SSH key too?"; then
+      if [ -x "$OP_SSH_SIGN" ] && ask_no "Sign personal commits with a 1Password SSH key?"; then
         read_line P_SIGNKEY "$(printf "\033[1;36m??\033[0m Public signing key for personal commits (ssh-ed25519 AAAA…): ")"
       fi
       write_identity "$GIT_IDENTITY_PERSONAL" "$P_NAME" "$P_EMAIL" "$P_SIGNKEY" "$OP_SSH_SIGN"
