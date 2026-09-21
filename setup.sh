@@ -563,7 +563,11 @@ fi
 # 4) Nix (Determinate installer — NOT via Homebrew) --------------------------
 if [ "$USER_ONLY" -eq 1 ]; then
   log "Skipping Nix (--user-only)"
-elif command -v nix >/dev/null 2>&1; then
+# From disk, not PATH: the Determinate installer publishes `nix` by patching
+# /etc/zshrc and friends, which only login and interactive shells read. A
+# non-interactive re-run would read that as "not installed" and re-run the
+# installer, which refuses once /nix/receipt.json exists — killing the run.
+elif command -v nix >/dev/null 2>&1 || [ -e /nix/receipt.json ]; then
   log "Upgrading Nix (Determinate)"
   if command -v determinate-nixd >/dev/null 2>&1; then
     sudo determinate-nixd upgrade
