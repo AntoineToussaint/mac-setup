@@ -96,7 +96,9 @@ continuous alternative, is Pro-only):
    Enter the passphrase and tick at least *Extensions installed from the Store*.
 
 That last step is manual by necessity — nothing in Raycast accepts a passphrase
-non-interactively. Once offered, a stamp at `~/.config/mac-setup/raycast-imported`
+non-interactively. **A new hire therefore gets no shared extensions until
+someone sends them an export**, and nothing in this repo can change that: the
+file is an encrypted blob that cannot be committed, and Raycast ships no CLI. Once offered, a stamp at `~/.config/mac-setup/raycast-imported`
 stops it repeating; delete the stamp to be asked again.
 
 Note that a `.rayconfig` is an encrypted blob, **not** a reviewable manifest: it

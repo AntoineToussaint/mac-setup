@@ -783,7 +783,7 @@ if [ -z "$LINEAR_AUTH_STATE" ] || [[ "$LINEAR_AUTH_STATE" == *"No workspaces con
 fi
 
 if [ -d "/Applications/Raycast.app" ] && [ -z "$RAYCAST_CONFIG" ] && [ ! -e "$RAYCAST_STAMP" ]; then
-  next_step "Restore Raycast extensions: no .rayconfig export found. On a Mac that is already set up, run Raycast's 'Export Settings & Data' command, then save the file to ~/mac-setup/raycast/ (gitignored) or point RAYCAST_CONFIG at it."
+  next_step "Raycast extensions were NOT restored — no .rayconfig export is available, and nothing here can create one (it is an encrypted blob, and Raycast has no CLI). Ask whoever set up your team to run Raycast's 'Export Settings & Data' on a configured Mac and send you the file and its passphrase; put it in ~/mac-setup/raycast/ (gitignored) or point RAYCAST_CONFIG at it, then re-run. Raycast works fine meanwhile — it just has none of the shared extensions."
 fi
 
 if [ -z "$(git config --global --includes user.name 2>/dev/null)" ] \
