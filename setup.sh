@@ -531,16 +531,28 @@ fi
 # and only handles one at a time, so setapp-sync asks per app and waits for each
 # download; this is just the gate into that walkthrough. The probe is real
 # state — the bundle ids under /Applications/Setapp — so nothing goes stale.
-if [ -d "/Applications/Setapp.app" ] && [ -f "$DIR/Setappfile" ]; then
+#
+# The gate tests Setapp's catalogue too, not just the app bundle: the Brewfile
+# installs Setapp.app, so its presence proves nothing, while the setapp: scheme
+# stays unregistered until someone signs in. Before that every deeplink fails
+# with kLSApplicationNotFoundErr — 28 apps in a row.
+SETAPP_PENDING=0
+SETAPP_CATALOG="$HOME/Library/Application Support/Setapp/Default/Databases/Apps.sqlite"
+if [ -d "/Applications/Setapp.app" ] && [ -f "$DIR/Setappfile" ] && [ ! -e "$SETAPP_CATALOG" ]; then
+  log "Setapp is installed but not signed in yet — skipping the app walkthrough"
+  echo "  Open Setapp.app, sign in, then run:  setapp-sync install"
+  SETAPP_PENDING=1
+elif [ -d "/Applications/Setapp.app" ] && [ -f "$DIR/Setappfile" ]; then
   SETAPP_MISSING="$("$DIR/bin/setapp-sync" install --dry-run 2>/dev/null | grep -c 'setapp://' || true)"
   if [ "${SETAPP_MISSING:-0}" -gt 0 ]; then
     log "Setapp apps"
     "$DIR/bin/setapp-sync" list --missing | sed 's/^/  /'
     if ask "Go through the $SETAPP_MISSING missing Setapp app(s) now? (asks per app)"; then
+      # Guarded: nothing an optional app walkthrough does justifies losing the run.
       if [ "$ASSUME_YES" -eq 1 ]; then
-        "$DIR/bin/setapp-sync" install --yes
+        "$DIR/bin/setapp-sync" install --yes || log "setapp-sync stopped early — finish later with: setapp-sync install"
       else
-        "$DIR/bin/setapp-sync" install
+        "$DIR/bin/setapp-sync" install || log "setapp-sync stopped early — finish later with: setapp-sync install"
       fi
     else
       echo "  Later:  setapp-sync install"
@@ -582,6 +594,10 @@ next_step() {
 
 if [ "$BREW_BUNDLE_FAILED" -eq 1 ]; then
   next_step "Some Brewfile entries failed to install (scroll up for which). If it was \`chgrp ... Operation not permitted\` while \"Adopting existing App\", that app was installed by hand and macOS protects its bundle: move it to the Trash in Finder and re-run, or grant this terminal App Management in System Settings -> Privacy & Security."
+fi
+
+if [ "$SETAPP_PENDING" -eq 1 ]; then
+  next_step "Sign in to Setapp (open Setapp.app), then restore your apps: setapp-sync install"
 fi
 
 if ! gh auth status >/dev/null 2>&1; then
