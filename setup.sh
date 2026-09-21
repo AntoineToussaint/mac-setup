@@ -187,6 +187,14 @@ else
   log "User-only mode — skipping sudo, Nix, and security hardening"
 fi
 
+# 0a) PATH for THIS process --------------------------------------------------
+# Mirror what dotfiles/zshenv adds; setup.sh is bash and cannot source it (zsh
+# arrays). Otherwise it inherits the PATH of a shell that predates the dotfiles,
+# and the Claude Code installer tells the reader to append to ~/.zshrc — which
+# by then is a symlink into this repo.
+export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$HOME/go/bin:$PATH"
+mkdir -p "$HOME/.local/bin" "$HOME/go/bin"
+
 # 0) Homebrew ----------------------------------------------------------------
 # Resolve it from disk, not PATH. Homebrew's PATH entry comes from
 # /etc/paths.d/homebrew via path_helper, which only login shells read — so a
@@ -435,7 +443,6 @@ eval "$(mise activate bash)"
 # `go install` would drop air in a path that moves on every Go release and leave
 # ~/go/bin — which zshenv puts on PATH — empty. zshenv pins it; so do we.
 export GOBIN="$HOME/go/bin"
-mkdir -p "$HOME/go/bin"
 if [ "$WANT_PYTHON" -eq 1 ]; then
   # Use precompiled Python (astral python-build-standalone) instead of compiling
   # from source — faster, and avoids the pyenv git-clone step that fails on a
@@ -672,7 +679,21 @@ fi
 
 # 6) Verification ------------------------------------------------------------
 log "Verifying setup (doctor.sh)"
-if bash "$DIR/doctor.sh"; then
+DOCTOR_OK=1
+bash "$DIR/doctor.sh" || DOCTOR_OK=0
+
+# A child cannot change its parent's environment, so the shell this ran in still
+# has its old PATH. Unsaid, the first thing anyone does after a clean run is
+# type `claude` and get "command not found". Print it whatever doctor said.
+log "Open a new terminal before you start work"
+cat <<'EOF'
+  This shell was started before the dotfiles were linked, so it does not have
+  Homebrew, mise, ~/.local/bin, ~/.cargo/bin or ~/go/bin on its PATH — claude,
+  air and friends will say "command not found" here even though they installed
+  correctly. Open a new terminal, or run:  exec zsh -l
+EOF
+
+if [ "$DOCTOR_OK" -eq 1 ]; then
   log "Setup verified successfully"
 else
   log "Updates completed, but doctor.sh found failures that need attention"
