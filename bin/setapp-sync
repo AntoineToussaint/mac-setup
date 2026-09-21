@@ -346,7 +346,14 @@ cmd_install() {
 
     log "Installing $name"
     echo "  Setapp will ask you to confirm — accept the panel it puts up."
-    open "setapp://install?app_id=$uuid"
+    # `open` fails with kLSApplicationNotFoundErr until the SetappAgent has run
+    # once; unguarded under `set -e` that killed this script and its caller.
+    # `continue`, or wait_for_install sits out its whole timeout for nothing.
+    if ! open "setapp://install?app_id=$uuid" 2>&1; then
+      warn "Setapp would not open the install link for $name — open Setapp.app and sign in, then re-run: setapp-sync install"
+      n_miss=$((n_miss + 1))
+      continue
+    fi
 
     while ! wait_for_install "$bid" "$name"; do
       if [ "$HAVE_TTY" -eq 0 ]; then break; fi
