@@ -293,10 +293,41 @@ else
   log "antidote or ~/.zsh_plugins.txt missing — skipping plugin pre-install"
 fi
 
-# 2b) Git identity (personal — kept OUT of the tracked gitconfig) -------------
+# 2b) GitHub sign-in ----------------------------------------------------------
+# Everything downstream assumes it — git's credential helper, the key upload
+# below, gh-dash, doctor — yet the script only ever printed a reminder, so a
+# first run always exited non-zero over a step nobody had attempted. The scopes
+# matter: a plain `gh auth login` grants repo/gist/read:org and `gh ssh-key add`
+# then fails. GIT_CONFIG_GLOBAL is a throwaway because gh offers to write its
+# credential helper into ~/.gitconfig, a symlink into this repo; --skip-ssh-key
+# because keys are the next step's job.
+GH_SCOPES="write:public_key,admin:ssh_signing_key"
+if command -v gh >/dev/null 2>&1 && [ -t 0 ] && [ "$ASSUME_YES" -eq 0 ]; then
+  if ! gh auth status >/dev/null 2>&1; then
+    log "GitHub sign-in"
+    echo "  gh prints a one-time code and opens your browser to paste it into."
+    if ask "Sign in to GitHub now?"; then
+      GH_THROWAWAY_CONFIG="$(mktemp -t mac-setup-gitconfig)"
+      GIT_CONFIG_GLOBAL="$GH_THROWAWAY_CONFIG" \
+        gh auth login -h github.com -p https -s "$GH_SCOPES" -w --skip-ssh-key \
+        || log "gh auth login did not complete — run later: gh auth login -s $GH_SCOPES"
+      rm -f "$GH_THROWAWAY_CONFIG"
+    fi
+  elif ! gh auth status 2>&1 | grep -q 'admin:ssh_signing_key'; then
+    # Only ask when the scopes are genuinely absent: `gh auth refresh` opens a
+    # browser even when it has nothing to do.
+    if ask "Add SSH-key permissions to your GitHub login? (needed to register your signing key)"; then
+      gh auth refresh -h github.com -s "$GH_SCOPES" \
+        || log "Scope refresh skipped — run later: gh auth refresh -s $GH_SCOPES"
+    fi
+  fi
+fi
+
+# 2c) Git identity (personal — kept OUT of the tracked gitconfig) -------------
 # dotfiles/gitconfig is shared and symlinked, so it must not carry one person's
 # name, email, or signing key. It [include]s the file written here instead.
 # Existing values are adopted silently; we only prompt when something is missing.
+SSH_KEY_PENDING=0
 GIT_IDENTITY="$HOME/.config/git/identity"
 if [ "$RECONFIGURE" -eq 1 ] || [ ! -f "$GIT_IDENTITY" ]; then
   log "Configuring Git identity"
@@ -317,22 +348,98 @@ if [ "$RECONFIGURE" -eq 1 ] || [ ! -f "$GIT_IDENTITY" ]; then
     GIT_EMAIL="${GIT_EMAIL:-$CUR_EMAIL}"
   fi
 
-  # Opt-in, defaulting to NO. Obin does not use 1Password, but the Brewfile
-  # installs it, so op-ssh-sign exists on every machine and this was asked with
-  # "yes" pre-selected. Saying yes without a key in 1Password writes gpgsign=true
-  # plus a dead path, and every commit then fails.
+  # Commit signing ------------------------------------------------------------
+  # A plain SSH key by default: git signs with ssh-keygen itself, no agent and no
+  # external signer. 1Password comes second — Obin does not use it, and that path
+  # needs a key already in the account. Both routes end with a key we have seen:
+  # gpgsign=true plus a key you do not have breaks every commit.
   OP_SSH_SIGN="/Applications/1Password.app/Contents/MacOS/op-ssh-sign"
-  GIT_SIGNKEY=""
-  if [ -x "$OP_SSH_SIGN" ] && [ -t 0 ] && [ "$ASSUME_YES" -eq 0 ]; then
-    if ask_no "Sign commits with a 1Password SSH key? (not used at Obin — needs a key already in your 1Password)"; then
-      read_line GIT_SIGNKEY "$(printf "\033[1;36m??\033[0m Public signing key (ssh-ed25519 AAAA…)%s: " "${CUR_KEY:+ [keep current]}")"
-      GIT_SIGNKEY="${GIT_SIGNKEY:-$CUR_KEY}"
+  CUR_PROG="$(git config --global --includes gpg.ssh.program 2>/dev/null || true)"
+  GIT_SIGNKEY=""; GIT_SIGNPROG=""
+
+  SSH_KEY=""   # private-key path; "$SSH_KEY.pub" is the public half
+  for _k in "$HOME/.ssh/id_ed25519" "$HOME/.ssh/id_ecdsa" "$HOME/.ssh/id_rsa"; do
+    if [ -f "$_k.pub" ]; then SSH_KEY="$_k"; break; fi
+  done
+
+  # No key at all is the common case for a new hire. ssh-keygen asks for the
+  # passphrase itself, so it never passes through this script.
+  if [ -z "$SSH_KEY" ] && [ -t 0 ] && [ "$ASSUME_YES" -eq 0 ]; then
+    log "No SSH key found"
+    echo "  An SSH key signs your commits so GitHub shows them as 'Verified',"
+    echo "  and it is what you will use for any host that wants a key."
+    if ask "Generate one now (ed25519)?"; then
+      mkdir -p "$HOME/.ssh"; chmod 700 "$HOME/.ssh"
+      echo "  A passphrase is optional but recommended — macOS can remember it."
+      if ssh-keygen -t ed25519 -C "${GIT_EMAIL:-$USER@$(hostname -s)}" -f "$HOME/.ssh/id_ed25519"; then
+        SSH_KEY="$HOME/.ssh/id_ed25519"
+        # Keychain holds the passphrase, so it is typed once ever rather than
+        # once per reboot. Harmless with no passphrase.
+        ssh-add --apple-use-keychain "$SSH_KEY" 2>/dev/null || true
+        if ! grep -qs UseKeychain "$HOME/.ssh/config"; then
+          { echo ""
+            echo "# Added by ~/mac-setup/setup.sh — remember the passphrase in the Keychain."
+            echo "Host *"
+            echo "  AddKeysToAgent yes"
+            echo "  UseKeychain yes"
+            printf "  IdentityFile %s\n" "$SSH_KEY"
+          } >> "$HOME/.ssh/config"
+          echo "  wrote a Keychain block to ~/.ssh/config"
+        fi
+      else
+        log "ssh-keygen did not complete — leaving signing off"
+      fi
     fi
-  elif [ -n "$CUR_KEY" ]; then
-    GIT_SIGNKEY="$CUR_KEY"   # already signing; preserve it on an unattended run
   fi
 
-  write_identity "$GIT_IDENTITY" "$GIT_NAME" "$GIT_EMAIL" "$GIT_SIGNKEY" "$OP_SSH_SIGN"
+  if [ -t 0 ] && [ "$ASSUME_YES" -eq 0 ]; then
+    if [ -n "$SSH_KEY" ] && ask "Sign commits with $(basename "$SSH_KEY").pub? (shows 'Verified' on GitHub)"; then
+      GIT_SIGNKEY="$SSH_KEY.pub"
+    elif [ -x "$OP_SSH_SIGN" ] && ask_no "Use a 1Password SSH key instead?"; then
+      read_line GIT_SIGNKEY "$(printf "\033[1;36m??\033[0m Public signing key (ssh-ed25519 AAAA…)%s: " "${CUR_KEY:+ [keep current]}")"
+      GIT_SIGNKEY="${GIT_SIGNKEY:-$CUR_KEY}"
+      [ -n "$GIT_SIGNKEY" ] && GIT_SIGNPROG="$OP_SSH_SIGN"
+    fi
+  elif [ -n "$CUR_KEY" ]; then
+    # Unattended: preserve whatever is already working, signer program included.
+    GIT_SIGNKEY="$CUR_KEY"; GIT_SIGNPROG="$CUR_PROG"
+  fi
+
+  # write_identity has always pointed allowedSignersFile here and nothing ever
+  # created it, so no signature this setup produced could be verified locally.
+  if [ -n "$GIT_SIGNKEY" ] && [ -n "$GIT_EMAIL" ]; then
+    case "$GIT_SIGNKEY" in
+      ssh-*) _pub="$GIT_SIGNKEY" ;;                                   # inline (1Password)
+      *)     _pub="$(cut -d' ' -f1,2 < "$GIT_SIGNKEY" 2>/dev/null || true)" ;;
+    esac
+    if [ -n "$_pub" ]; then
+      mkdir -p "$HOME/.ssh"; touch "$HOME/.ssh/allowed_signers"
+      grep -qF -- "$_pub" "$HOME/.ssh/allowed_signers" \
+        || printf '%s %s\n' "$GIT_EMAIL" "$_pub" >> "$HOME/.ssh/allowed_signers"
+    fi
+  fi
+
+  # Twice: GitHub tracks authentication and signing keys separately, and adding
+  # only the first is the trap — pushes work while commits read "Unverified".
+  if [ -n "$SSH_KEY" ] && command -v gh >/dev/null 2>&1; then
+    if gh auth status >/dev/null 2>&1; then
+      _title="$(scutil --get ComputerName 2>/dev/null || hostname -s)"
+      _body="$(cut -d' ' -f2 < "$SSH_KEY.pub")"
+      if gh ssh-key list 2>/dev/null | grep -qF -- "$_body"; then
+        echo "  SSH key is already on your GitHub account"
+      else
+        log "Adding your SSH key to GitHub"
+        gh ssh-key add "$SSH_KEY.pub" --title "$_title" \
+          || log "Could not add the auth key — run: gh auth refresh -s write:public_key,admin:ssh_signing_key"
+        gh ssh-key add "$SSH_KEY.pub" --type signing --title "$_title (signing)" \
+          || log "Could not add the signing key — run: gh auth refresh -s write:public_key,admin:ssh_signing_key"
+      fi
+    else
+      SSH_KEY_PENDING=1   # gh is not authenticated yet; surfaced in the follow-ups
+    fi
+  fi
+
+  write_identity "$GIT_IDENTITY" "$GIT_NAME" "$GIT_EMAIL" "$GIT_SIGNKEY" "$GIT_SIGNPROG"
   log "Wrote $GIT_IDENTITY"
 
   # Optional SECOND identity for personal projects, selected by folder. Commits
@@ -359,11 +466,14 @@ if [ "$RECONFIGURE" -eq 1 ] || [ ! -f "$GIT_IDENTITY" ]; then
     if [ -z "$P_EMAIL" ]; then
       log "No personal email entered — skipping personal identity (its whole point is a different email)"
     else
-      P_SIGNKEY=""
-      if [ -x "$OP_SSH_SIGN" ] && ask_no "Sign personal commits with a 1Password SSH key?"; then
+      P_SIGNKEY=""; P_SIGNPROG=""
+      if [ -n "$SSH_KEY" ] && ask "Sign personal commits with $(basename "$SSH_KEY").pub too?"; then
+        P_SIGNKEY="$SSH_KEY.pub"
+      elif [ -x "$OP_SSH_SIGN" ] && ask_no "Sign personal commits with a 1Password SSH key?"; then
         read_line P_SIGNKEY "$(printf "\033[1;36m??\033[0m Public signing key for personal commits (ssh-ed25519 AAAA…): ")"
+        [ -n "$P_SIGNKEY" ] && P_SIGNPROG="$OP_SSH_SIGN"
       fi
-      write_identity "$GIT_IDENTITY_PERSONAL" "$P_NAME" "$P_EMAIL" "$P_SIGNKEY" "$OP_SSH_SIGN"
+      write_identity "$GIT_IDENTITY_PERSONAL" "$P_NAME" "$P_EMAIL" "$P_SIGNKEY" "$P_SIGNPROG"
       mkdir -p "$PERSONAL_DIR"
       # gitdir needs a trailing slash (git appends ** to match repos beneath it);
       # /i is case-insensitive to match macOS's case-insensitive filesystem.
@@ -657,6 +767,14 @@ fi
 
 if ! gh auth status >/dev/null 2>&1; then
   next_step "Authenticate GitHub CLI: gh auth login"
+fi
+
+if [ "$SSH_KEY_PENDING" -eq 1 ]; then
+  next_step "Put your SSH key on GitHub (gh was not authenticated when it was created): gh auth login && gh auth refresh -s write:public_key,admin:ssh_signing_key && gh ssh-key add ~/.ssh/id_ed25519.pub && gh ssh-key add ~/.ssh/id_ed25519.pub --type signing"
+fi
+
+if [ ! -f "$HOME/.ssh/id_ed25519.pub" ] && [ ! -f "$HOME/.ssh/id_rsa.pub" ] && [ ! -f "$HOME/.ssh/id_ecdsa.pub" ]; then
+  next_step "No SSH key on this Mac — create one with: bash ~/mac-setup/setup.sh --reconfigure"
 fi
 
 LINEAR_AUTH_STATE="$(linear auth list 2>/dev/null || true)"
