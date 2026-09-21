@@ -522,6 +522,41 @@ else
   log "Claude Code present ($(claude --version 2>/dev/null || echo installed)) — it self-updates"
 fi
 
+# 4) Nix (Determinate installer — NOT via Homebrew) --------------------------
+if [ "$USER_ONLY" -eq 1 ]; then
+  log "Skipping Nix (--user-only)"
+# From disk, not PATH: the Determinate installer publishes `nix` by patching
+# /etc/zshrc and friends, which only login and interactive shells read. A
+# non-interactive re-run would read that as "not installed" and re-run the
+# installer, which refuses once /nix/receipt.json exists — killing the run.
+elif command -v nix >/dev/null 2>&1 || [ -e /nix/receipt.json ]; then
+  log "Upgrading Nix (Determinate)"
+  if command -v determinate-nixd >/dev/null 2>&1; then
+    sudo determinate-nixd upgrade
+  else
+    sudo -i nix upgrade-nix
+  fi
+else
+  log "Installing Nix (Determinate Systems installer — will prompt for sudo)"
+  curl -fsSL https://install.determinate.systems/nix | sh -s -- install --no-confirm
+fi
+
+# 5) Security hardening (secure by default — skip with --no-security) --------
+if [ "$USER_ONLY" -eq 1 ]; then
+  log "Skipping security hardening (--user-only)"
+elif [ "$SECURITY" -eq 1 ]; then
+  log "Applying security hardening (security.sh — will prompt for sudo)"
+  bash "$DIR/security.sh"
+else
+  log "Skipping security hardening (--no-security)"
+fi
+
+# 5b) Optional app walkthroughs ----------------------------------------------
+# After Nix and the hardening on purpose. Both are interactive and the likeliest
+# place for a run to stall — Raycast wants a passphrase typed by hand, Setapp
+# asks about every missing app — and anyone who answers "n" or walks away here
+# used to end up with an unhardened Mac. Nothing below this line is load-bearing.
+
 # Raycast extensions: there is NO scriptable installer. Extensions live in
 # Raycast's own store and an encrypted sqlite DB (raycast-enc.sqlite, key in the
 # Keychain), so `brew bundle` can't restore them and copying the support dir
@@ -596,35 +631,6 @@ elif [ -d "/Applications/Setapp.app" ] && [ -f "$DIR/Setappfile" ]; then
       echo "  Later:  setapp-sync install"
     fi
   fi
-fi
-
-# 4) Nix (Determinate installer — NOT via Homebrew) --------------------------
-if [ "$USER_ONLY" -eq 1 ]; then
-  log "Skipping Nix (--user-only)"
-# From disk, not PATH: the Determinate installer publishes `nix` by patching
-# /etc/zshrc and friends, which only login and interactive shells read. A
-# non-interactive re-run would read that as "not installed" and re-run the
-# installer, which refuses once /nix/receipt.json exists — killing the run.
-elif command -v nix >/dev/null 2>&1 || [ -e /nix/receipt.json ]; then
-  log "Upgrading Nix (Determinate)"
-  if command -v determinate-nixd >/dev/null 2>&1; then
-    sudo determinate-nixd upgrade
-  else
-    sudo -i nix upgrade-nix
-  fi
-else
-  log "Installing Nix (Determinate Systems installer — will prompt for sudo)"
-  curl -fsSL https://install.determinate.systems/nix | sh -s -- install --no-confirm
-fi
-
-# 5) Security hardening (secure by default — skip with --no-security) --------
-if [ "$USER_ONLY" -eq 1 ]; then
-  log "Skipping security hardening (--user-only)"
-elif [ "$SECURITY" -eq 1 ]; then
-  log "Applying security hardening (security.sh — will prompt for sudo)"
-  bash "$DIR/security.sh"
-else
-  log "Skipping security hardening (--no-security)"
 fi
 
 log "Checking conditional follow-ups"
