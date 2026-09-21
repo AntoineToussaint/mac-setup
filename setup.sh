@@ -21,6 +21,15 @@
 # TTY), to install all of them without prompting.
 set -euo pipefail
 
+# macOS ships bash 3.2 (2007) as /bin/bash, which rejects read_line's fractional
+# `read -t` — an error on every prompt, and the paste drain silently doing
+# nothing. Hand over to Homebrew's bash; MAC_SETUP_REEXEC stops this looping.
+if [ "${BASH_VERSINFO[0]}" -lt 4 ] && [ -x /opt/homebrew/bin/bash ] \
+   && [ -z "${MAC_SETUP_REEXEC:-}" ]; then
+  export MAC_SETUP_REEXEC=1
+  exec /opt/homebrew/bin/bash "${BASH_SOURCE[0]}" "$@"
+fi
+
 export HOMEBREW_NO_ENV_HINTS=1   # quiet Homebrew's hint chatter (errors still show)
 # Homebrew 6's parallel downloader (concurrency "auto") can deadlock: it prints
 # "Fetching a, b, c, …" then hangs with no active curl. Force serial downloads —
@@ -74,7 +83,11 @@ read_line() { # read_line VAR "prompt text" — paste-hardened `read`
   printf '%s' "$2"
   read -r "$1"
   paste_on
-  while read -r -t 0.05 __junk; do :; done
+  # bash 4+ only. The re-exec above usually spares us, but a first run happens
+  # before Homebrew's bash exists.
+  if [ "${BASH_VERSINFO[0]}" -ge 4 ]; then
+    while read -r -t 0.05 __junk; do :; done
+  fi
 }
 ask() { # ask "Question?" — yes/no prompt, default yes. Auto-yes with --yes or no TTY.
   if [ "$ASSUME_YES" -eq 1 ] || [ ! -t 0 ]; then return 0; fi
