@@ -201,7 +201,15 @@ while read -r kind pkg; do
   brew trust --"$kind" "$pkg"           >/dev/null 2>&1 || true
 done < <(awk -F'"' '/^(brew|cask) "[^"]+\/[^"]+\/[^"]+"/ {
            print ($1 ~ /^cask/ ? "cask" : "formula"), $2 }' "$DIR/Brewfile")
-brew bundle --file="$DIR/Brewfile"
+# One failing cask must not cost the dotfiles, runtimes, Nix and the hardening.
+# `brew bundle` exits non-zero if ANY entry fails, most often because an app was
+# installed by hand and macOS blocks the chgrp Homebrew runs when adopting it.
+# Record it, carry on, and let doctor.sh be the gate.
+BREW_BUNDLE_FAILED=0
+brew bundle --file="$DIR/Brewfile" || {
+  BREW_BUNDLE_FAILED=1
+  log "brew bundle had failures — continuing; doctor.sh reports what is missing"
+}
 log "Upgrading Homebrew packages"
 brew upgrade --yes
 brew cleanup
@@ -571,6 +579,10 @@ next_step() {
   NEXT_STEP=$((NEXT_STEP+1))
   printf "  %d. %s\n" "$NEXT_STEP" "$*"
 }
+
+if [ "$BREW_BUNDLE_FAILED" -eq 1 ]; then
+  next_step "Some Brewfile entries failed to install (scroll up for which). If it was \`chgrp ... Operation not permitted\` while \"Adopting existing App\", that app was installed by hand and macOS protects its bundle: move it to the Trash in Finder and re-run, or grant this terminal App Management in System Settings -> Privacy & Security."
+fi
 
 if ! gh auth status >/dev/null 2>&1; then
   next_step "Authenticate GitHub CLI: gh auth login"
