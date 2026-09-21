@@ -160,6 +160,27 @@ else
   log "User-only mode — skipping sudo, Nix, and security hardening"
 fi
 
+# 0) Homebrew ----------------------------------------------------------------
+# Resolve it from disk, not PATH. Homebrew's PATH entry comes from
+# /etc/paths.d/homebrew via path_helper, which only login shells read — so a
+# terminal already open when Homebrew landed never sees it, and this script died
+# on `brew update` with brew sitting right there in /opt/homebrew/bin.
+BREW=/opt/homebrew/bin/brew          # Apple Silicon only; bootstrap.sh refuses Intel
+if ! command -v brew >/dev/null 2>&1; then
+  if [ -x "$BREW" ]; then
+    log "Homebrew is installed but not on this shell's PATH — loading it for this run"
+  else
+    log "Installing Homebrew"
+    if [ -t 0 ]; then
+      retry 3 bash -c 'set -o pipefail; curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh | bash'
+    else
+      retry 3 bash -c 'set -o pipefail; curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh | NONINTERACTIVE=1 bash'
+    fi
+  fi
+  [ -x "$BREW" ] || { log "Homebrew install did not produce $BREW"; exit 1; }
+  eval "$("$BREW" shellenv)"
+fi
+
 # 1) Homebrew packages -------------------------------------------------------
 # NOTE on hangs: a *corrupt* cached bottle (rare — usually left by a hard-killed
 # run) can make Homebrew 6 FREEZE silently ("Fetching <pkg>…", no curl, no
