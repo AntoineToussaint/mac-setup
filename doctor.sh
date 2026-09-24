@@ -138,6 +138,22 @@ if EPHEMERAL=$(grep -rlE '/private/tmp/|/var/folders/|/scratchpad/' "$DOTS" 2>/d
 else
   ok "no ephemeral sandbox paths leaked into dotfiles"
 fi
+# Same class as the sandbox paths above. git punishes it hardest: a signingkey
+# under /Users/<someone> breaks every commit, and a value below the [include]
+# overrides the personal file, so the victim cannot fix it on their side.
+# Comments are excluded: the check is about what these files DO, and matching
+# prose meant a comment that merely mentions a path failed the machine.
+LEAKED=""
+while IFS= read -r f; do
+  grep -vE '^[[:space:]]*#' "$f" | grep -qE '/Users/[^/]+/' && LEAKED="$LEAKED $f"
+done < <(find "$DOTS" "$DIR/bin" -type f 2>/dev/null)
+if [ -n "$LEAKED" ]; then
+  for f in $LEAKED; do
+    bad "$f hardcodes a path under a specific user's home — use \$HOME; git diff and fix"
+  done
+else
+  ok "no hardcoded home directories in dotfiles or bin"
+fi
 check "zsh startup files parse" zsh -n \
   "$DOTS/zshenv" "$DOTS/zprofile" "$DOTS/zshrc" "$DOTS/shortcuts.zsh" \
   "$DOTS/completions/_shell-coach" "$DIR/bin/shell-coach" "$DIR/bin/devtunnel"
@@ -242,7 +258,16 @@ else
 fi
 
 section "Nix"
-check "nix on PATH" command -v nix
+# Installed, not on-PATH: doctor is non-interactive bash and cannot inherit a
+# PATH that did not exist when it started, so on the run that installs Nix a
+# PATH-only test is a false failure. A new terminal sorts the PATH out.
+if command -v nix >/dev/null 2>&1; then
+  ok "nix on PATH ($(nix --version 2>/dev/null | head -1))"
+elif [ -x /nix/var/nix/profiles/default/bin/nix ]; then
+  ok "nix installed ($(/nix/var/nix/profiles/default/bin/nix --version 2>/dev/null | head -1)) — not on this shell's PATH yet; a new terminal picks it up"
+else
+  bad "nix not installed — re-run setup.sh"
+fi
 
 # ---------- Kubernetes / cloud auth -------------------------------------------
 # kubectl auth plugins fail LATE and cryptically: the kubeconfig names an exec
@@ -301,10 +326,49 @@ if [ -n "$(git config --global --includes user.email 2>/dev/null)" ]; then
 else
   bad "git identity missing — run: bash setup.sh --reconfigure"
 fi
-case "$(git config --global --includes gpg.ssh.program 2>/dev/null)" in
-  *op-ssh-sign*) ok "commit signing via 1Password (op-ssh-sign)" ;;
-  *) warn "op-ssh-sign not configured in gitconfig" ;;
-esac
+# Report what is set rather than pushing anyone towards 1Password, which nobody
+# here uses. What matters is signing switched ON that cannot work.
+SIGN_KEY="$(git config --global --includes user.signingkey 2>/dev/null || true)"
+if [ "$(git config --global --includes commit.gpgsign 2>/dev/null)" != "true" ]; then
+  ok "commit signing off (fine — Obin does not use 1Password)"
+elif [ -z "$SIGN_KEY" ]; then
+  bad "commit signing is ON with no signing key — every commit will fail; bash setup.sh --reconfigure"
+elif case "$SIGN_KEY" in ssh-*) true ;; *) false ;; esac; then
+  ok "commit signing on (inline public key)"
+elif [ -r "${SIGN_KEY/#\~/$HOME}" ]; then
+  ok "commit signing on ($SIGN_KEY)"
+else
+  bad "commit signing is ON but the key $SIGN_KEY does not exist — every commit will fail"
+fi
+
+# The key existing is only half of it: with gpg.ssh.program set, git hands every
+# signature to that binary. 1Password signs through its agent socket, so
+# op-ssh-sign fails when the agent is off — and names itself, not git, so it
+# reads like an unrelated app problem. Probe the socket; signing something for
+# real would pop biometrics on a read-only check.
+if [ "$(git config --global --includes commit.gpgsign 2>/dev/null)" = "true" ]; then
+  SIGN_PROG="$(git config --global --includes gpg.ssh.program 2>/dev/null || true)"
+  if [ -z "$SIGN_PROG" ]; then
+    :   # no external signer: git uses ssh-keygen, covered above
+  elif [ ! -x "$SIGN_PROG" ]; then
+    bad "commit signing calls $SIGN_PROG, which is not installed — every commit will fail"
+  elif case "$SIGN_PROG" in *op-ssh-sign) true ;; *) false ;; esac; then
+    # The published socket path. A `find` over the whole container store took
+    # ~3s on a check that is meant to be instant and runs after every setup.
+    OP_AGENT_SOCK="$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
+    if [ -S "$OP_AGENT_SOCK" ]; then
+      ok "commit signing via 1Password (agent socket present)"
+    elif grep -qs '^[[:space:]]*IdentityAgent' "$HOME/.ssh/config"; then
+      # A custom IdentityAgent means the socket lives somewhere we cannot guess;
+      # reporting a hard failure on that would be a false alarm.
+      warn "commit signing via op-ssh-sign; ~/.ssh/config sets a custom IdentityAgent, so the agent could not be verified from here"
+    else
+      bad "commit signing calls op-ssh-sign but 1Password's SSH agent is not running — every commit fails with 'Could not connect to socket'. Turn it on in 1Password > Developer, or drop the signer: git config --file ~/.config/git/identity --unset gpg.ssh.program"
+    fi
+  else
+    ok "commit signing via $SIGN_PROG"
+  fi
+fi
 
 # ---------- Summary -----------------------------------------------------------
 printf "\n\033[1m%d passed, %d warnings, %d failed\033[0m\n" "$PASS" "$WARN" "$FAIL"

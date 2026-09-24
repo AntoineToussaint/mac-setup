@@ -95,6 +95,9 @@ if [[ -r "$_antidote_zsh" ]]; then
 fi
 unset _antidote_zsh
 
-# Added by rust-clean installer (https://github.com/AntoineToussaint/rust-clean)
-fpath=(/Users/antoine/.zsh/completions $fpath)
+# Added by rust-clean installer (https://github.com/AntoineToussaint/rust-clean).
+# It wrote an absolute path under its author's home, and ~/.zshrc is a symlink
+# into this repo, so that shipped everywhere. $HOME, and only if the dir exists.
+[[ -d "$HOME/.zsh/completions" ]] &&
+  fpath=("$HOME/.zsh/completions" $fpath)
 autoload -Uz compinit && compinit

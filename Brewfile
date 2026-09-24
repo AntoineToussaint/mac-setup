@@ -10,6 +10,8 @@ cask "font-caskaydia-cove-nerd-font"    # Cascadia Code — MS's editor font, li
 cask "font-monaspice-nerd-font"         # GitHub Monaspace — modern, texture healing
 brew "starship"                         # cross-shell prompt (Rust, actively maintained)
 brew "antidote"                         # zsh plugin manager (loads ~/.zsh_plugins.txt)
+brew "bash"                             # bash 5 — macOS ships 3.2, which rejects fractional
+                                        # `read -t`. setup.sh re-execs under this one.
 # NOTE: zsh-autosuggestions / zsh-syntax-highlighting / OMZ git plugin are now
 # managed by antidote via ~/.zsh_plugins.txt, not installed as brew formulae.
 
@@ -98,6 +100,10 @@ brew "difftastic"   # structural (syntax-aware) diffs — complements delta (bin
 brew "git-absorb"   # auto-generate fixup! commits into the right ancestor
 # gh-dash (PR/issue TUI dashboard) is a gh extension, not a formula — installed in setup.sh
 brew "schpet/tap/linear"  # Linear CLI — git/gh-aware: start issues as branches, open PRs, agent-friendly
+brew "AntoineToussaint/lazybox/lazybox"  # reactive GitHub inbox + coding-agent fleet, in a TUI.
+                          # Tap-qualified, so setup.sh's pre-tap/trust loop covers it. Ships a
+                          # prebuilt binary — no Rust/Zig toolchain. Worktrees live in ~/.lazybox,
+                          # which is why zshenv pins OBIN_REGISTRY to a stable clone.
 
 # ---------- Dev environment ----------
 cask "orbstack"     # Docker / Linux VMs (light Docker Desktop replacement)
@@ -166,6 +172,7 @@ cask "fellow"        # meeting agendas / notes / action items, tied to the calen
 cask "linear"        # issue tracker desktop app (schpet/tap/linear above is the CLI)
 cask "stats"         # menu-bar system monitor
 cask "slack"         # team chat
+cask "zoom"          # video calls (auto_updates — Zoom's own updater takes over after install)
 cask "discord"       # chat/communities
 cask "spotify"       # music
 
