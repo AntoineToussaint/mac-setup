@@ -141,7 +141,13 @@ fi
 # Same class as the sandbox paths above. git punishes it hardest: a signingkey
 # under /Users/<someone> breaks every commit, and a value below the [include]
 # overrides the personal file, so the victim cannot fix it on their side.
-if LEAKED=$(grep -rlE '/Users/[^/]+/' "$DOTS" "$DIR/bin" 2>/dev/null); then
+# Comments are excluded: the check is about what these files DO, and matching
+# prose meant a comment that merely mentions a path failed the machine.
+LEAKED=""
+while IFS= read -r f; do
+  grep -vE '^[[:space:]]*#' "$f" | grep -qE '/Users/[^/]+/' && LEAKED="$LEAKED $f"
+done < <(find "$DOTS" "$DIR/bin" -type f 2>/dev/null)
+if [ -n "$LEAKED" ]; then
   for f in $LEAKED; do
     bad "$f hardcodes a path under a specific user's home — use \$HOME; git diff and fix"
   done
@@ -347,8 +353,15 @@ if [ "$(git config --global --includes commit.gpgsign 2>/dev/null)" = "true" ]; 
   elif [ ! -x "$SIGN_PROG" ]; then
     bad "commit signing calls $SIGN_PROG, which is not installed — every commit will fail"
   elif case "$SIGN_PROG" in *op-ssh-sign) true ;; *) false ;; esac; then
-    if [ -n "$(find "$HOME/Library/Group Containers" -name agent.sock 2>/dev/null | head -1)" ]; then
+    # The published socket path. A `find` over the whole container store took
+    # ~3s on a check that is meant to be instant and runs after every setup.
+    OP_AGENT_SOCK="$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
+    if [ -S "$OP_AGENT_SOCK" ]; then
       ok "commit signing via 1Password (agent socket present)"
+    elif grep -qs '^[[:space:]]*IdentityAgent' "$HOME/.ssh/config"; then
+      # A custom IdentityAgent means the socket lives somewhere we cannot guess;
+      # reporting a hard failure on that would be a false alarm.
+      warn "commit signing via op-ssh-sign; ~/.ssh/config sets a custom IdentityAgent, so the agent could not be verified from here"
     else
       bad "commit signing calls op-ssh-sign but 1Password's SSH agent is not running — every commit fails with 'Could not connect to socket'. Turn it on in 1Password > Developer, or drop the signer: git config --file ~/.config/git/identity --unset gpg.ssh.program"
     fi
