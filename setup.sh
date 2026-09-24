@@ -24,8 +24,11 @@ set -euo pipefail
 # macOS ships bash 3.2 (2007) as /bin/bash, which rejects read_line's fractional
 # `read -t` — an error on every prompt, and the paste drain silently doing
 # nothing. Hand over to Homebrew's bash; MAC_SETUP_REEXEC stops this looping.
+# BASH_SOURCE is EMPTY when the script is piped (`curl … | bash`) or run via
+# `bash -c`, and `exec bash ""` dies with "No such file or directory". Only
+# hand over when there is a real file to hand over to.
 if [ "${BASH_VERSINFO[0]}" -lt 4 ] && [ -x /opt/homebrew/bin/bash ] \
-   && [ -z "${MAC_SETUP_REEXEC:-}" ]; then
+   && [ -f "${BASH_SOURCE[0]}" ] && [ -z "${MAC_SETUP_REEXEC:-}" ]; then
   export MAC_SETUP_REEXEC=1
   exec /opt/homebrew/bin/bash "${BASH_SOURCE[0]}" "$@"
 fi
@@ -157,6 +160,19 @@ write_identity() { # write_identity FILE NAME EMAIL SIGNKEY SIGNPROG — emit a 
   } > "$file"
 }
 
+seed_allowed_signer() { # seed_allowed_signer EMAIL SIGNKEY — entry for ~/.ssh/allowed_signers
+  local email="$1" signkey="$2" pub
+  [ -n "$signkey" ] && [ -n "$email" ] || return 0
+  case "$signkey" in
+    ssh-*) pub="$signkey" ;;                                        # inline (1Password)
+    *)     pub="$(cut -d' ' -f1,2 < "$signkey" 2>/dev/null || true)" ;;
+  esac
+  [ -n "$pub" ] || return 0
+  mkdir -p "$HOME/.ssh"; touch "$HOME/.ssh/allowed_signers"
+  grep -qF -- "$email $pub" "$HOME/.ssh/allowed_signers" \
+    || printf '%s %s\n' "$email" "$pub" >> "$HOME/.ssh/allowed_signers"
+}
+
 # Always-run cleanup (normal exit, error, or Ctrl-C). Bracketed paste is owned
 # by the interactive shell / Claude Code, which expect it ON; read_line turns it
 # OFF around a prompt, so if we die mid-prompt we MUST turn it back on or the
@@ -192,6 +208,7 @@ fi
 # arrays). Otherwise it inherits the PATH of a shell that predates the dotfiles,
 # and the Claude Code installer tells the reader to append to ~/.zshrc — which
 # by then is a symlink into this repo.
+INHERITED_PATH="$PATH"   # what the calling shell had, for the closing notice
 export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$HOME/go/bin:$PATH"
 mkdir -p "$HOME/.local/bin" "$HOME/go/bin"
 
@@ -213,6 +230,12 @@ if ! command -v brew >/dev/null 2>&1; then
     fi
   fi
   [ -x "$BREW" ] || { log "Homebrew install did not produce $BREW"; exit 1; }
+fi
+# Unconditionally, so brew sits ahead of the user bin dirs added above — the
+# order a login shell ends up with (zshenv prepends them, then zprofile's
+# shellenv prepends brew). Without this the two disagree whenever a binary
+# exists in both, e.g. claude from the cask and from the native installer.
+if [ -x "$BREW" ]; then
   eval "$("$BREW" shellenv)"
 fi
 
@@ -223,7 +246,10 @@ fi
 # re-run. We deliberately DON'T auto-delete *.incomplete files here: those let
 # large flaky downloads (e.g. the ChatGPT cask) RESUME across re-runs.
 log "Refreshing Homebrew and installing packages (Brewfile)"
-brew update
+# Guarded for the same reason as `brew bundle` below: a flaky network here, or
+# a cask that will not quit during the upgrade, must not cost the dotfiles,
+# runtimes, Nix and the hardening.
+retry 2 brew update || log "brew update failed — continuing with what is already cached"
 # Homebrew 6 refuses to install formulae from third-party taps unless trusted,
 # and the prompt it would show is invisible to a non-interactive run — so
 # `brew bundle` just aborts the whole batch. Pre-tap and pre-trust every
@@ -246,8 +272,8 @@ brew bundle --file="$DIR/Brewfile" || {
   log "brew bundle had failures — continuing; doctor.sh reports what is missing"
 }
 log "Upgrading Homebrew packages"
-brew upgrade --yes
-brew cleanup
+brew upgrade --yes || log "brew upgrade had failures — continuing; doctor.sh reports what is outdated"
+brew cleanup || log "brew cleanup failed — disk space only, continuing"
 # To remove anything not in the Brewfile:  brew bundle cleanup --file="$DIR/Brewfile"
 
 # 2) Dotfiles (symlinked so future edits in ~/mac-setup take effect) ---------
@@ -398,7 +424,16 @@ if [ "$RECONFIGURE" -eq 1 ] || [ ! -f "$GIT_IDENTITY" ]; then
     elif [ -x "$OP_SSH_SIGN" ] && ask_no "Use a 1Password SSH key instead?"; then
       read_line GIT_SIGNKEY "$(printf "\033[1;36m??\033[0m Public signing key (ssh-ed25519 AAAA…)%s: " "${CUR_KEY:+ [keep current]}")"
       GIT_SIGNKEY="${GIT_SIGNKEY:-$CUR_KEY}"
-      [ -n "$GIT_SIGNKEY" ] && GIT_SIGNPROG="$OP_SSH_SIGN"
+      # op-ssh-sign looks the key up in 1Password BY its public key, so a file
+      # path cannot resolve — and [keep current] happily hands one back from an
+      # earlier plain-key run. Refuse rather than write a config that fails
+      # every commit.
+      case "$GIT_SIGNKEY" in
+        "")    ;;
+        ssh-*) GIT_SIGNPROG="$OP_SSH_SIGN" ;;
+        *)     log "Not a public key — op-ssh-sign needs the ssh-ed25519 AAAA… text, not a path. Leaving signing off."
+               GIT_SIGNKEY="" ;;
+      esac
     fi
   elif [ -n "$CUR_KEY" ]; then
     # Unattended: preserve whatever is already working, signer program included.
@@ -407,35 +442,43 @@ if [ "$RECONFIGURE" -eq 1 ] || [ ! -f "$GIT_IDENTITY" ]; then
 
   # write_identity has always pointed allowedSignersFile here and nothing ever
   # created it, so no signature this setup produced could be verified locally.
-  if [ -n "$GIT_SIGNKEY" ] && [ -n "$GIT_EMAIL" ]; then
-    case "$GIT_SIGNKEY" in
-      ssh-*) _pub="$GIT_SIGNKEY" ;;                                   # inline (1Password)
-      *)     _pub="$(cut -d' ' -f1,2 < "$GIT_SIGNKEY" 2>/dev/null || true)" ;;
-    esac
-    if [ -n "$_pub" ]; then
-      mkdir -p "$HOME/.ssh"; touch "$HOME/.ssh/allowed_signers"
-      grep -qF -- "$_pub" "$HOME/.ssh/allowed_signers" \
-        || printf '%s %s\n' "$GIT_EMAIL" "$_pub" >> "$HOME/.ssh/allowed_signers"
-    fi
-  fi
+  seed_allowed_signer "$GIT_EMAIL" "$GIT_SIGNKEY"
 
-  # Twice: GitHub tracks authentication and signing keys separately, and adding
-  # only the first is the trap — pushes work while commits read "Unverified".
+  # Registering a key writes to a GitHub account, so it is asked for explicitly
+  # rather than riding along with the signing choice: the key found on disk may
+  # be one you keep for something else entirely, and an unattended run must
+  # never publish it. Checked per TYPE — `gh ssh-key list` returns both kinds in
+  # one stream, so a key already present for authentication is not proof that
+  # the signing one is, which is exactly the "pushes work, commits still read
+  # Unverified" trap this block exists to avoid.
   if [ -n "$SSH_KEY" ] && command -v gh >/dev/null 2>&1; then
-    if gh auth status >/dev/null 2>&1; then
-      _title="$(scutil --get ComputerName 2>/dev/null || hostname -s)"
-      _body="$(cut -d' ' -f2 < "$SSH_KEY.pub")"
-      if gh ssh-key list 2>/dev/null | grep -qF -- "$_body"; then
-        echo "  SSH key is already on your GitHub account"
-      else
-        log "Adding your SSH key to GitHub"
-        gh ssh-key add "$SSH_KEY.pub" --title "$_title" \
-          || log "Could not add the auth key — run: gh auth refresh -s write:public_key,admin:ssh_signing_key"
-        gh ssh-key add "$SSH_KEY.pub" --type signing --title "$_title (signing)" \
-          || log "Could not add the signing key — run: gh auth refresh -s write:public_key,admin:ssh_signing_key"
-      fi
+    if ! gh auth status >/dev/null 2>&1; then
+      SSH_KEY_PENDING=1
+    elif [ ! -t 0 ] || [ "$ASSUME_YES" -eq 1 ]; then
+      SSH_KEY_PENDING=1   # nothing reaches an account without someone saying so
     else
-      SSH_KEY_PENDING=1   # gh is not authenticated yet; surfaced in the follow-ups
+      _body="$(cut -d' ' -f2 < "$SSH_KEY.pub")"
+      _keys="$(gh ssh-key list 2>/dev/null || true)"
+      # Fields are title, key, added, id, type; index() not ~ because a base64
+      # key body is full of regex metacharacters.
+      _have_key() {
+        awk -F'\t' -v b="$_body" -v t="$1" 'index($2, b) && $NF == t { f = 1 } END { exit !f }' <<< "$_keys"
+      }
+      _missing=""
+      _have_key authentication || _missing="authentication"
+      _have_key signing        || _missing="${_missing:+$_missing and }signing"
+      if [ -z "$_missing" ]; then
+        echo "  SSH key already on your GitHub account (authentication and signing)"
+      elif ask "Add $(basename "$SSH_KEY").pub to your GitHub account as the $_missing key?"; then
+        _title="$(scutil --get ComputerName 2>/dev/null || hostname -s)"
+        log "Adding your SSH key to GitHub"
+        _have_key authentication || gh ssh-key add "$SSH_KEY.pub" --title "$_title" \
+          || log "Could not add the auth key — run: gh auth refresh -s write:public_key,admin:ssh_signing_key"
+        _have_key signing || gh ssh-key add "$SSH_KEY.pub" --type signing --title "$_title (signing)" \
+          || log "Could not add the signing key — run: gh auth refresh -s write:public_key,admin:ssh_signing_key"
+      else
+        SSH_KEY_PENDING=1
+      fi
     fi
   fi
 
@@ -474,6 +517,10 @@ if [ "$RECONFIGURE" -eq 1 ] || [ ! -f "$GIT_IDENTITY" ]; then
         [ -n "$P_SIGNKEY" ] && P_SIGNPROG="$OP_SSH_SIGN"
       fi
       write_identity "$GIT_IDENTITY_PERSONAL" "$P_NAME" "$P_EMAIL" "$P_SIGNKEY" "$P_SIGNPROG"
+      # The personal identity signs with its own email, and often its own key;
+      # without its own entry those commits fail local verification while the
+      # default identity's succeed.
+      seed_allowed_signer "$P_EMAIL" "$P_SIGNKEY"
       mkdir -p "$PERSONAL_DIR"
       # gitdir needs a trailing slash (git appends ** to match repos beneath it);
       # /i is case-insensitive to match macOS's case-insensitive filesystem.
@@ -800,16 +847,24 @@ log "Verifying setup (doctor.sh)"
 DOCTOR_OK=1
 bash "$DIR/doctor.sh" || DOCTOR_OK=0
 
-# A child cannot change its parent's environment, so the shell this ran in still
-# has its old PATH. Unsaid, the first thing anyone does after a clean run is
-# type `claude` and get "command not found". Print it whatever doctor said.
-log "Open a new terminal before you start work"
-cat <<'EOF'
-  This shell was started before the dotfiles were linked, so it does not have
-  Homebrew, mise, ~/.local/bin, ~/.cargo/bin or ~/go/bin on its PATH — claude,
-  air and friends will say "command not found" here even though they installed
-  correctly. Open a new terminal, or run:  exec zsh -l
+# A child cannot change its parent's environment, so the shell this ran in may
+# still have the PATH it started with. Test that against the PATH we were
+# actually handed rather than asserting it: on a re-run from an already
+# configured terminal the claim would be false, and advice that is visibly
+# wrong is how people learn to skim past the rest of the output.
+case ":$INHERITED_PATH:" in
+  *":$HOME/.local/bin:"*) SHELL_PATH_OK=1 ;;
+  *)                      SHELL_PATH_OK=0 ;;
+esac
+if [ "$SHELL_PATH_OK" -eq 0 ]; then
+  log "Open a new terminal before you start work"
+  cat <<'EOF'
+  The shell you ran this from does not have ~/.local/bin (and likely Homebrew
+  and mise) on its PATH — claude, air and friends will say "command not found"
+  there even though they installed correctly. Open a new terminal, or run:
+  exec zsh -l
 EOF
+fi
 
 if [ "$DOCTOR_OK" -eq 1 ]; then
   log "Setup verified successfully"
