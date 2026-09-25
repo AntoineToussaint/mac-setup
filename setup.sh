@@ -26,9 +26,10 @@ set -euo pipefail
 # nothing. Hand over to Homebrew's bash; MAC_SETUP_REEXEC stops this looping.
 # BASH_SOURCE is EMPTY when the script is piped (`curl … | bash`) or run via
 # `bash -c`, and `exec bash ""` dies with "No such file or directory". Only
-# hand over when there is a real file to hand over to.
+# hand over when there is a real file to hand over to. The :- matters: set -u
+# is already on, and a bare ${BASH_SOURCE[0]} aborts right here when it is empty.
 if [ "${BASH_VERSINFO[0]}" -lt 4 ] && [ -x /opt/homebrew/bin/bash ] \
-   && [ -f "${BASH_SOURCE[0]}" ] && [ -z "${MAC_SETUP_REEXEC:-}" ]; then
+   && [ -f "${BASH_SOURCE[0]:-}" ] && [ -z "${MAC_SETUP_REEXEC:-}" ]; then
   export MAC_SETUP_REEXEC=1
   exec /opt/homebrew/bin/bash "${BASH_SOURCE[0]}" "$@"
 fi
@@ -39,7 +40,7 @@ export HOMEBREW_NO_ENV_HINTS=1   # quiet Homebrew's hint chatter (errors still s
 # a bit slower, but reliable. Remove once the upstream hang is fixed.
 export HOMEBREW_DOWNLOAD_CONCURRENCY=1
 
-DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-.}")" && pwd)"
 DOTS="$DIR/dotfiles"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 
@@ -138,11 +139,11 @@ write_identity() { # write_identity FILE NAME EMAIL SIGNKEY SIGNPROG — emit a 
       echo "[gpg]"
       echo "	format = ssh"
       echo '[gpg "ssh"]'
-      # Only with an external signer. A plain SSH key needs none — git signs with
-      # ssh-keygen — and naming one that cannot reach the key breaks commits.
-      if [ -n "$signprog" ]; then
-        printf "\tprogram = %s\n" "$signprog"
-      fi
+      # Always named: a per-folder identity is included from another one, and
+      # without its own line it would INHERIT that one's signer (op-ssh-sign),
+      # which cannot resolve a key file path and breaks every commit. A plain
+      # SSH key signs with ssh-keygen, git's own default.
+      printf "\tprogram = %s\n" "${signprog:-ssh-keygen}"
       echo "	allowedSignersFile = ~/.ssh/allowed_signers"
       echo "[commit]"
       echo "	gpgsign = true"
@@ -514,7 +515,13 @@ if [ "$RECONFIGURE" -eq 1 ] || [ ! -f "$GIT_IDENTITY" ]; then
         P_SIGNKEY="$SSH_KEY.pub"
       elif [ -x "$OP_SSH_SIGN" ] && ask_no "Sign personal commits with a 1Password SSH key?"; then
         read_line P_SIGNKEY "$(printf "\033[1;36m??\033[0m Public signing key for personal commits (ssh-ed25519 AAAA…): ")"
-        [ -n "$P_SIGNKEY" ] && P_SIGNPROG="$OP_SSH_SIGN"
+        # Same guard as the default identity: op-ssh-sign needs the key text.
+        case "$P_SIGNKEY" in
+          "")    ;;
+          ssh-*) P_SIGNPROG="$OP_SSH_SIGN" ;;
+          *)     log "Not a public key — op-ssh-sign needs the ssh-ed25519 AAAA… text, not a path. Leaving personal signing off."
+                 P_SIGNKEY="" ;;
+        esac
       fi
       write_identity "$GIT_IDENTITY_PERSONAL" "$P_NAME" "$P_EMAIL" "$P_SIGNKEY" "$P_SIGNPROG"
       # The personal identity signs with its own email, and often its own key;
@@ -817,7 +824,8 @@ if ! gh auth status >/dev/null 2>&1; then
 fi
 
 if [ "$SSH_KEY_PENDING" -eq 1 ]; then
-  next_step "Put your SSH key on GitHub (gh was not authenticated when it was created): gh auth login && gh auth refresh -s write:public_key,admin:ssh_signing_key && gh ssh-key add ~/.ssh/id_ed25519.pub && gh ssh-key add ~/.ssh/id_ed25519.pub --type signing"
+  _pub="$SSH_KEY.pub"
+  next_step "Put your SSH key on GitHub (it was not added during setup): gh auth login && gh auth refresh -s write:public_key,admin:ssh_signing_key && gh ssh-key add $_pub && gh ssh-key add $_pub --type signing"
 fi
 
 if [ ! -f "$HOME/.ssh/id_ed25519.pub" ] && [ ! -f "$HOME/.ssh/id_rsa.pub" ] && [ ! -f "$HOME/.ssh/id_ecdsa.pub" ]; then

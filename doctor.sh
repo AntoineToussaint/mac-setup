@@ -348,8 +348,9 @@ fi
 # real would pop biometrics on a read-only check.
 if [ "$(git config --global --includes commit.gpgsign 2>/dev/null)" = "true" ]; then
   SIGN_PROG="$(git config --global --includes gpg.ssh.program 2>/dev/null || true)"
-  if [ -z "$SIGN_PROG" ]; then
-    :   # no external signer: git uses ssh-keygen, covered above
+  if [ -z "$SIGN_PROG" ] || [ "$SIGN_PROG" = ssh-keygen ]; then
+    :   # no external signer: git uses ssh-keygen, covered above (setup.sh names
+        # it explicitly so a per-folder identity cannot inherit another's signer)
   elif [ ! -x "$SIGN_PROG" ]; then
     bad "commit signing calls $SIGN_PROG, which is not installed — every commit will fail"
   elif case "$SIGN_PROG" in *op-ssh-sign) true ;; *) false ;; esac; then
