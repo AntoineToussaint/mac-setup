@@ -19,6 +19,16 @@ path=(
   path=("/Applications/OrbStack.app/Contents/MacOS/xbin" $path)
 [[ -d "$HOME/.lmstudio/bin" ]] && path+=("$HOME/.lmstudio/bin")
 
+# Lazybox builds ghostty's VT parser from source (crates/libghostty-vt-sys) and
+# demands the exact Zig in that repo's .zig-version; `make setup` caches it
+# under ~/.cache/lazybox/zig/<arch>-<os>-<version>. Lazybox's own Makefile
+# targets already put it on PATH, so this only exists so a bare `cargo build`
+# or `zig` works in that checkout. Appended, never prepended — a real system or
+# mise-managed zig should still win. Glob is reverse-sorted (On) so the newest
+# cached toolchain comes first, and nullglob (N) keeps this quiet on machines
+# that have never run `make setup`.
+path+=( "$HOME"/.cache/lazybox/zig/*(N/On) )
+
 export PATH
 
 # Pin `go install` output to a stable directory. mise's Go plugin otherwise
