@@ -698,6 +698,18 @@ else
   log "Claude Code present ($(claude --version 2>/dev/null || echo installed)) — it self-updates"
 fi
 
+# Herdr (terminals + coding agents that keep running): official installer, no
+# brew cask. Puts Herdr.app in ~/Applications (user-level, no sudo) and
+# herdr-core/`hc` in ~/.local/bin. The app keeps itself and the core current, so
+# only install when missing — re-running the script would just reinstall.
+if [ ! -d "$HOME/Applications/Herdr.app" ] && [ ! -d /Applications/Herdr.app ]; then
+  log "Installing Herdr (official installer — self-updating)"
+  retry 3 bash -c 'set -o pipefail; curl -fsSL https://releases.herdr.dev/app/install.sh | sh' \
+    || log "Herdr install failed — install later: curl -fsSL https://releases.herdr.dev/app/install.sh | sh"
+else
+  log "Herdr present — it self-updates"
+fi
+
 # 4) Nix (Determinate installer — NOT via Homebrew) --------------------------
 if [ "$USER_ONLY" -eq 1 ]; then
   log "Skipping Nix (--user-only)"
