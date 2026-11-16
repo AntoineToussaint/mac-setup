@@ -26,7 +26,8 @@ brew "zoxide"       # smart cd (z)
 brew "jq"           # JSON processor
 brew "yq"           # YAML/XML processor
 brew "btop"         # resource monitor
-brew "tldr"         # simplified man pages
+brew "tlrc"         # simplified man pages — official Rust tldr client (`tldr`); the old
+                    # node `tldr` formula was removed from homebrew-core
 brew "tree"         # directory tree
 brew "wget"         # downloader
 brew "tmux"         # terminal multiplexer (latest stable via brew)
@@ -248,8 +249,8 @@ cask "session-manager-plugin" # needed for `aws ssm start-session` — bastion-l
 cask "gcloud-cli"   # Google Cloud CLI — `gcloud`, `gsutil`, `bq` (was google-cloud-sdk)
                     # GKE auth needs a separate component: `gcloud components install
                     # gke-gcloud-auth-plugin` (not a brew package). EKS auth is native to awscli.
-brew "azure-cli"    # Azure CLI — `az`. Bicep (Azure's IaC DSL) isn't a brew package either:
-                    # run `az bicep install` once az is set up.
+cask "azure-cli"    # Azure CLI — `az` (a cask now; the formula was removed from homebrew-core).
+                    # Bicep (Azure's IaC DSL) isn't a brew package: run `az bicep install` once.
 # Two DIFFERENT tools are both called "kubelogin", and the confusion is a real
 # trap: homebrew-core's `kubelogin` is int128's OIDC plugin, and it does NOT
 # install a `kubelogin` binary at all — its executable is `kubectl-oidc_login`
