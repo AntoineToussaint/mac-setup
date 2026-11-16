@@ -135,6 +135,11 @@ write_identity() { # write_identity FILE NAME EMAIL SIGNKEY SIGNPROG — emit a 
     [ -n "$name" ]  && printf "\tname = %s\n" "$name"
     [ -n "$email" ] && printf "\temail = %s\n" "$email"
     if [ -n "$signkey" ]; then
+      # op-ssh-sign can only sign with keys stored in 1Password (referenced by
+      # their literal public key). A key given as a path lives on disk, and
+      # op-ssh-sign fails every commit with "No SSH private key found" — sign
+      # those with OpenSSH directly.
+      [ -f "${signkey/#\~/$HOME}" ] && signprog="ssh-keygen"
       printf "\tsigningkey = %s\n" "$signkey"
       echo "[gpg]"
       echo "	format = ssh"
