@@ -210,6 +210,10 @@ cask "codex"        # OpenAI Codex CLI (official cask). No silent auto-update, b
                     # `codex update` (install-method-aware) or `brew upgrade` keeps it current.
 brew "llm"          # Multi-provider LLM CLI wrapper (OpenAI built in; more via plugins)
 brew "gemini-cli"   # Google's agent CLI — third seat next to Claude Code and Codex
+cask "antigravity"  # Google Antigravity — agent-orchestration IDE (auto_updates)
+brew "hermes-agent" # Nous Research's self-improving agent: builds skills from experience
+brew "block-goose-cli" # Block's open-source extensible agent (goose CLI; not the `goose`
+                    # formula, which is the unrelated Go DB-migration tool)
 brew "notion-mcp-server" # official Notion MCP server — lets agents read/write the
                     # workspace. Needs an integration token (notion.so/profile/integrations)
                     # in NOTION_TOKEN + registration via `claude mcp add`; installing
