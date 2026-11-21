@@ -450,6 +450,8 @@ Compat-testing IDEs (installed, not daily drivers): `visual-studio-code`,
 `zed` (upstream), `jetbrains-toolbox` (IntelliJ/PyCharm/GoLand/…), `sublime-text`.
 Agent orchestration: `conductor` (parallel Claude Code agents in git worktrees);
 `herdr` (terminals and coding agents that keep running — official installer, self-updating).
+More agents: `antigravity` (Google's agent-orchestration IDE), `hermes-agent` (Nous Research,
+self-improving), `block-goose-cli` (Block's `goose`).
 Agent spend: `ccusage daily` / `monthly` prices the tokens Claude Code, Codex and
 Gemini CLI burned at API rates — i.e. what the flat-rate subscriptions would have
 cost in cash. Reads local JSONL logs only; nothing leaves the machine.
